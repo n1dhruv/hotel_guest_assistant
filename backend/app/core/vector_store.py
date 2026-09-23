@@ -24,7 +24,6 @@ import threading
 from typing import Any, Dict, List, Optional, Sequence, Union
 import uuid
 
-import httpx
 import numpy as np
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -647,6 +646,15 @@ class QdrantVectorStore:
             use_hyde=True,
         )
 
+    @property
+    def storage_mode(self) -> str:
+        """Indicates whether storage is in-memory (RAM), local disk, or cloud."""
+        if hasattr(self.client, "_client") and getattr(self.client._client, "location", None) == ":memory:":
+            return "in-memory (RAM)"
+        if getattr(settings, "QDRANT_URL", None) and getattr(settings, "QDRANT_API_KEY", None):
+            return "cloud"
+        return "local disk"
+
     def get_point_count(self) -> int:
         """Returns the number of points in the active collection."""
         try:
@@ -693,11 +701,15 @@ class QdrantVectorStore:
 
     def close(self) -> None:
         """Closes the underlying client connection if owned."""
+        global _vector_store_instance
         if self._owns_client and hasattr(self.client, "close"):
             try:
                 self.client.close()
             except Exception:
                 pass
+        with _instance_lock:
+            if _vector_store_instance is self:
+                _vector_store_instance = None
 
 
 # =====================================================================
@@ -715,6 +727,17 @@ def get_vector_store(force_new: bool = False, **kwargs: Any) -> QdrantVectorStor
     """
     global _vector_store_instance
     with _instance_lock:
-        if _vector_store_instance is None or force_new:
+        is_closed = False
+        if _vector_store_instance is not None:
+            c = getattr(_vector_store_instance, "client", None)
+            if c is not None:
+                if getattr(c, "_closed", False):
+                    is_closed = True
+                elif hasattr(c, "_client") and getattr(c._client, "_closed", False):
+                    is_closed = True
+
+        if _vector_store_instance is None or force_new or is_closed:
+            if "in_memory" not in kwargs and getattr(settings, "QDRANT_IN_MEMORY", False):
+                kwargs["in_memory"] = True
             _vector_store_instance = QdrantVectorStore(**kwargs)
         return _vector_store_instance

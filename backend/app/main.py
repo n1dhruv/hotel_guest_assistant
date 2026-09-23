@@ -88,6 +88,7 @@ def get_vector_store_stats():
         "point_count": store.get_point_count(),
         "vector_dimension": store.embedder.dimension,
         "embedding_provider": store.embedder.provider_name,
+        "storage_mode": store.storage_mode,
         "status": "ready" if store.get_point_count() > 0 else "empty"
     }
 

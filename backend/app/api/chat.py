@@ -28,6 +28,10 @@ class ChatResponse(BaseModel):
     injection_blocked: bool = False
     needs_dates: bool = False
     retrieved_sources: list[str] = []
+    # Phase 6: detailed citation pills, per-stage latency, pipeline provenance
+    sources: list[dict[str, Any]] = []
+    latency_breakdown: dict[str, float] = {}
+    pipeline: dict[str, Any] = {}
     latency_ms: float = 0.0
 
 
@@ -57,6 +61,11 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
         injection_blocked=result.get("injection_blocked", False)
     )
 
+    breakdown = dict(result.get("latency_breakdown", {}))
+    breakdown.setdefault("generation_ms", 0.0)
+    # Total wall-clock always present alongside the per-stage breakdown
+    breakdown["total_ms"] = latency_ms
+
     return ChatResponse(
         reply=result.get("reply", ""),
         tool_called=result.get("tool_called", False),
@@ -65,6 +74,9 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
         injection_blocked=result.get("injection_blocked", False),
         needs_dates=result.get("needs_dates", False),
         retrieved_sources=result.get("retrieved_sources", []),
+        sources=result.get("sources", []),
+        latency_breakdown=breakdown,
+        pipeline=result.get("pipeline", {}),
         latency_ms=latency_ms
     )
 
@@ -92,6 +104,8 @@ async def _sse_generator(messages_data: list[dict]) -> AsyncGenerator[str, None]
                     injection_blocked=chunk.get("injection_blocked", False)
                 )
                 # Send metadata event so frontend can update state
+                chunk_breakdown = dict(chunk.get("latency_breakdown", {}))
+                chunk_breakdown.setdefault("total_ms", latency_ms)
                 payload = json.dumps({
                     "type": "metadata",
                     "tool_called": chunk.get("tool_called", False),
@@ -100,6 +114,9 @@ async def _sse_generator(messages_data: list[dict]) -> AsyncGenerator[str, None]
                     "injection_blocked": chunk.get("injection_blocked", False),
                     "needs_dates": chunk.get("needs_dates", False),
                     "retrieved_sources": chunk.get("retrieved_sources", []),
+                    "sources": chunk.get("sources", []),
+                    "latency_breakdown": chunk_breakdown,
+                    "pipeline": chunk.get("pipeline", {}),
                     "latency_ms": latency_ms
                 })
                 yield f"data: {payload}\n\n"

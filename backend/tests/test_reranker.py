@@ -326,7 +326,7 @@ def test_rag_retrieve_reranked_integration():
 
 
 def test_fastapi_rerank_stats_endpoint():
-    """Verify GET /api/rerank/stats returns 200 and valid schema."""
+    """Verify GET /api/rerank/stats returns 200 and valid schema (zero-cost FlashRank default)."""
     mock_store = MagicMock()
     mock_store.get_point_count.return_value = 29
 
@@ -337,8 +337,8 @@ def test_fastapi_rerank_stats_endpoint():
             data = res.json()
             assert "model" in data
             assert "provider" in data
-            assert data["provider"] == "openrouter"
-            assert "nvidia/llama-nemotron-rerank-vl-1b-v2" in data["model"]
+            assert data["provider"] == "flashrank-local"
+            assert "MiniLM" in data["model"]
             assert "default_top_n" in data
             assert "total_requests" in data
 

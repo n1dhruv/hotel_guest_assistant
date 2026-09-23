@@ -104,7 +104,7 @@ def main():
         "-p",
         type=str,
         default=None,
-        help="Embedding provider for vector channel (auto, openrouter, nemotron, deterministic)",
+        help="Embedding provider for vector channel (fastembed, auto, openrouter, nemotron, deterministic)",
     )
 
     args = parser.parse_args()

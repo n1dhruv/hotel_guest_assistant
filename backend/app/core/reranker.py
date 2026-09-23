@@ -66,6 +66,184 @@ class BaseReranker(ABC):
         pass
 
 
+def _candidate_text(candidate: Dict[str, Any]) -> str:
+    """Constructs an informative text representation of a chunk for a cross-encoder."""
+    title = str(candidate.get("title", "")).strip()
+    content = str(candidate.get("content", "")).strip()
+    category = str(candidate.get("category", "")).strip().upper()
+
+    if title and category:
+        return f"[{category}] {title}: {content}"
+    elif title:
+        return f"{title}: {content}"
+    return content
+
+
+# Default local cross-encoder for the zero-cost pipeline (FlashRank, ONNX CPU).
+DEFAULT_FLASHRANK_MODEL = "ms-marco-MiniLM-L-12-v2"
+
+
+class FlashRankReranker(BaseReranker):
+    """
+    Zero-cost local cross-encoder reranker powered by FlashRank (ONNX, CPU).
+
+    No API key, no quota, no network calls after the one-time model download.
+    Falls back to DeterministicLocalReranker if the library or model weights
+    are unavailable, so reranking never crashes the pipeline.
+    """
+
+    provider_name = "flashrank-local"
+
+    def __init__(
+        self,
+        model: Optional[str] = None,
+        top_n: Optional[int] = None,
+        fallback_reranker: Optional[BaseReranker] = None,
+    ):
+        self.model = model or getattr(settings, "RERANKER_LOCAL_MODEL", "") or DEFAULT_FLASHRANK_MODEL
+        self.top_n = top_n if top_n is not None else getattr(settings, "RERANKER_TOP_N", 3)
+        self._fallback = fallback_reranker or DeterministicLocalReranker(
+            model_name=f"{self.model} (fallback)"
+        )
+        self._ranker: Any = None
+        self._ranker_failed = False
+        self._lock = threading.Lock()
+
+        # Operational metrics
+        self._stats_lock = threading.Lock()
+        self._total_requests: int = 0
+        self._successful_reranks: int = 0
+        self._fallback_reranks: int = 0
+        self._total_latency_ms: float = 0.0
+
+    @property
+    def model_name(self) -> str:
+        return self.model
+
+    def _get_ranker(self) -> Any:
+        """Lazily loads the FlashRank ONNX ranker (cached per instance)."""
+        with self._lock:
+            if self._ranker is None and not self._ranker_failed:
+                try:
+                    from flashrank import Ranker
+                    self._ranker = Ranker(model_name=self.model)
+                except Exception as e:
+                    self._ranker_failed = True
+                    logger.warning(f"[FlashRank] Model load failed ({e}); using deterministic fallback.")
+            return self._ranker
+
+    def _record_metrics(self, latency_ms: float, is_fallback: bool) -> None:
+        with self._stats_lock:
+            self._total_requests += 1
+            if is_fallback:
+                self._fallback_reranks += 1
+            else:
+                self._successful_reranks += 1
+            self._total_latency_ms += latency_ms
+
+    def _enrich(
+        self,
+        candidates: Sequence[Dict[str, Any]],
+        scored_ids: List[int],
+        scores: Dict[int, float],
+        limit: int,
+    ) -> List[Dict[str, Any]]:
+        """Attaches rerank_score / rerank_rank / rerank_delta to the Top-N."""
+        reranked: List[Dict[str, Any]] = []
+        for orig_idx in scored_ids[:limit]:
+            cand = dict(candidates[orig_idx])
+            cand["rerank_score"] = round(float(scores.get(orig_idx, 0.0)), 6)
+            cand["rerank_model"] = self.model
+            cand["rerank_fallback"] = False
+            cand["_orig_idx"] = orig_idx
+            reranked.append(cand)
+
+        reranked.sort(key=lambda x: x["rerank_score"], reverse=True)
+        final_list = reranked[:limit]
+        for rank_idx, item in enumerate(final_list, start=1):
+            item["rerank_rank"] = rank_idx
+            prior_rank = item.get("rrf_rank", item.pop("_orig_idx", rank_idx) + 1)
+            item.pop("_orig_idx", None)
+            item["rerank_delta"] = prior_rank - rank_idx
+        return final_list
+
+    def rerank(
+        self,
+        query: str,
+        candidates: Sequence[Dict[str, Any]],
+        top_n: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        if not candidates:
+            return []
+
+        limit = top_n if top_n is not None else self.top_n
+        start_time = time.perf_counter()
+        ranker = self._get_ranker()
+
+        passages: List[Dict[str, Any]] = []
+        for idx, cand in enumerate(candidates):
+            text = _candidate_text(cand)
+            if text.strip():
+                passages.append({"id": idx, "text": text})
+
+        if ranker is None or not passages:
+            res = self._fallback.rerank(query, candidates, top_n=limit)
+            self._record_metrics((time.perf_counter() - start_time) * 1000.0, is_fallback=True)
+            return res
+
+        try:
+            from flashrank import RerankRequest
+            with self._lock:
+                results = ranker.rerank(RerankRequest(query=query, passages=passages))
+            scored_ids: List[int] = []
+            scores: Dict[int, float] = {}
+            for item in results or []:
+                if not isinstance(item, dict):
+                    continue
+                orig_idx = item.get("id")
+                if orig_idx is None or orig_idx < 0 or orig_idx >= len(candidates):
+                    continue
+                scored_ids.append(orig_idx)
+                scores[orig_idx] = float(item.get("score", 0.0))
+            if not scored_ids:
+                raise ValueError("FlashRank returned no scored passages")
+            res = self._enrich(candidates, scored_ids, scores, limit)
+            self._record_metrics((time.perf_counter() - start_time) * 1000.0, is_fallback=False)
+            return res
+        except Exception as e:
+            logger.warning(f"[FlashRank] Rerank failed ({e}); using deterministic fallback.")
+            res = self._fallback.rerank(query, candidates, top_n=limit)
+            self._record_metrics((time.perf_counter() - start_time) * 1000.0, is_fallback=True)
+            return res
+
+    async def arerank(
+        self,
+        query: str,
+        candidates: Sequence[Dict[str, Any]],
+        top_n: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        # ONNX inference is CPU-bound: keep the event loop free.
+        return await asyncio.to_thread(self.rerank, query, candidates, top_n)
+
+    def get_stats(self) -> Dict[str, Any]:
+        with self._stats_lock:
+            avg_lat = (
+                round(self._total_latency_ms / self._total_requests, 2)
+                if self._total_requests > 0
+                else 0.0
+            )
+            return {
+                "model": self.model,
+                "provider": self.provider_name,
+                "default_top_n": self.top_n,
+                "total_requests": self._total_requests,
+                "successful_reranks": self._successful_reranks,
+                "fallback_reranks": self._fallback_reranks,
+                "avg_latency_ms": avg_lat,
+                "model_loaded": self._ranker is not None,
+            }
+
+
 # =====================================================================
 # Deterministic Local Fallback Cross-Scorer
 # =====================================================================
@@ -76,6 +254,8 @@ class DeterministicLocalReranker(BaseReranker):
     Computes exact lexical-semantic cross-scoring between query terms
     and candidate content/title/keywords, providing resilient fallback.
     """
+
+    provider_name = "deterministic-local"
 
     def __init__(self, model_name: str = "deterministic-local-cross-encoder"):
         self._model_name = model_name
@@ -176,6 +356,8 @@ class OpenRouterNemotronReranker(BaseReranker):
     Re-scores candidate chunks jointly against the query with cross-attention.
     """
 
+    provider_name = "openrouter"
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -208,15 +390,7 @@ class OpenRouterNemotronReranker(BaseReranker):
 
     def _prepare_document_text(self, candidate: Dict[str, Any]) -> str:
         """Constructs an informative text representation of the chunk for the cross-encoder."""
-        title = str(candidate.get("title", "")).strip()
-        content = str(candidate.get("content", "")).strip()
-        category = str(candidate.get("category", "")).strip().upper()
-
-        if title and category:
-            return f"[{category}] {title}: {content}"
-        elif title:
-            return f"{title}: {content}"
-        return content
+        return _candidate_text(candidate)
 
     def _build_headers(self) -> Dict[str, str]:
         """Constructs OpenRouter HTTP authorization and identification headers."""
@@ -448,16 +622,27 @@ class OpenRouterNemotronReranker(BaseReranker):
 # =====================================================================
 
 _reranker_lock = threading.Lock()
-_reranker_instance: Optional[OpenRouterNemotronReranker] = None
+_reranker_instance: Optional[BaseReranker] = None
 
 
-def get_reranker(force_new: bool = False, **kwargs: Any) -> OpenRouterNemotronReranker:
+def get_reranker(force_new: bool = False, **kwargs: Any) -> BaseReranker:
     """
-    Returns application-wide singleton instance of OpenRouterNemotronReranker.
+    Returns application-wide singleton reranker, routed by RERANKER_PROVIDER:
+    - "flashrank" (default, zero-cost): FlashRankReranker (local ONNX cross-encoder).
+    - "local" / "deterministic": DeterministicLocalReranker (lexical cross-scorer).
+    - anything else: OpenRouterNemotronReranker (hosted, quota-metered).
     Thread-safe initialization.
     """
     global _reranker_instance
+    provider = str(
+        kwargs.pop("provider", None) or getattr(settings, "RERANKER_PROVIDER", "openrouter")
+    ).lower().strip()
     with _reranker_lock:
         if _reranker_instance is None or force_new:
-            _reranker_instance = OpenRouterNemotronReranker(**kwargs)
+            if provider in ("flashrank", "local-flashrank"):
+                _reranker_instance = FlashRankReranker(**kwargs)
+            elif provider in ("local", "deterministic", "fallback"):
+                _reranker_instance = DeterministicLocalReranker()
+            else:
+                _reranker_instance = OpenRouterNemotronReranker(**kwargs)
         return _reranker_instance

@@ -33,8 +33,10 @@ class Settings(BaseSettings):
     QDRANT_STORAGE_PATH: Path = BASE_DIR / "app" / "data" / "qdrant_storage"
     QDRANT_IN_MEMORY: bool = False
 
-    # Embedding Configuration: NVIDIA Nemotron-3-Embed-1B via OpenRouter (2048 dim, no fallback)
-    EMBEDDING_PROVIDER: str = "openrouter"
+    # Embedding Configuration (zero-cost default: FastEmbed BAAI/bge-small-en-v1.5, 384 dim, local CPU).
+    # Opt into quota-metered NVIDIA Nemotron-3-Embed-1B via OpenRouter (2048 dim) with
+    # EMBEDDING_PROVIDER=openrouter (model/dim below). Qdrant auto-recreates on dim change.
+    EMBEDDING_PROVIDER: str = "fastembed"
     EMBEDDING_MODEL: str = "openrouter/nvidia/nemotron-3-embed-1b:free"
     EMBEDDING_DIMENSION: int = 2048
     FORCE_REINDEX: bool = False
@@ -53,10 +55,14 @@ class Settings(BaseSettings):
     HYBRID_DENSE_CANDIDATES: int = 10
     HYBRID_BM25_CANDIDATES: int = 10
 
-    # Reranker Pipeline: NVIDIA Llama Nemotron Rerank VL 1B V2 via OpenRouter (Top 10 -> Top 3-5)
+    # Reranker Pipeline (Top 10 -> Top 3-5).
+    # Zero-cost default: "flashrank" (local MiniLM ONNX cross-encoder, no key/quota).
+    # Alternatives: "local" (deterministic lexical scorer) or "openrouter"
+    # (NVIDIA Llama Nemotron Rerank VL 1B V2, quota-metered, model below).
     RERANKER_ENABLED: bool = True
-    RERANKER_PROVIDER: str = "openrouter"
+    RERANKER_PROVIDER: str = "flashrank"
     RERANKER_MODEL: str = "nvidia/llama-nemotron-rerank-vl-1b-v2:free"
+    RERANKER_LOCAL_MODEL: str = "ms-marco-MiniLM-L-12-v2"
     RERANKER_TOP_N: int = 3
     RERANKER_TIMEOUT: float = 6.0
 

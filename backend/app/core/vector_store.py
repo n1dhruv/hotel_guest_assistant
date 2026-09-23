@@ -308,10 +308,12 @@ class DeterministicLocalEmbedder(BaseEmbedder):
 
 def get_embedder(provider: Optional[str] = None) -> BaseEmbedder:
     """
-    Factory to retrieve an embedding adapter.
-    Uses OpenRouterNemotronEmbeddingAdapter (openrouter/nvidia/nemotron-3-embed-1b:free, 2048 dim) strictly.
-    NO fallback to other providers/models is permitted to prevent Qdrant vector
-    dimension mismatch and collection corruption.
+    Factory to retrieve an embedding adapter, routed by EMBEDDING_PROVIDER:
+    - "fastembed" (default, zero-cost): FastEmbedAdapter (BAAI/bge-small-en-v1.5, 384 dim, local CPU).
+    - "openrouter"/"nemotron"/"auto": OpenRouterNemotronEmbeddingAdapter (2048 dim, quota-metered).
+    - "openai": OpenAIEmbeddingAdapter. "deterministic"/"local"/"mock": DeterministicLocalEmbedder.
+    Qdrant auto-recreates the collection when the active embedder dimension changes,
+    so switching providers safely re-indexes instead of corrupting vectors.
     """
     req_provider = (provider or getattr(settings, "EMBEDDING_PROVIDER", "openrouter")).lower().strip()
 

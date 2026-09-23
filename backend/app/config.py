@@ -62,7 +62,9 @@ class Settings(BaseSettings):
     RERANKER_ENABLED: bool = True
     RERANKER_PROVIDER: str = "flashrank"
     RERANKER_MODEL: str = "nvidia/llama-nemotron-rerank-vl-1b-v2:free"
-    RERANKER_LOCAL_MODEL: str = "ms-marco-MiniLM-L-12-v2"
+    # TinyBERT default (~4MB) keeps Render free-tier (512MB) alive; set to
+    # "ms-marco-MiniLM-L-12-v2" (~80MB) for higher precision when RAM allows.
+    RERANKER_LOCAL_MODEL: str = "ms-marco-TinyBERT-L-2-v2"
     RERANKER_TOP_N: int = 3
     RERANKER_TIMEOUT: float = 6.0
 

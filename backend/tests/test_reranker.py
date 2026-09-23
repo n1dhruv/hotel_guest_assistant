@@ -338,7 +338,7 @@ def test_fastapi_rerank_stats_endpoint():
             assert "model" in data
             assert "provider" in data
             assert data["provider"] == "flashrank-local"
-            assert "MiniLM" in data["model"]
+            assert "TinyBERT" in data["model"]
             assert "default_top_n" in data
             assert "total_requests" in data
 

@@ -80,7 +80,8 @@ def _candidate_text(candidate: Dict[str, Any]) -> str:
 
 
 # Default local cross-encoder for the zero-cost pipeline (FlashRank, ONNX CPU).
-DEFAULT_FLASHRANK_MODEL = "ms-marco-MiniLM-L-12-v2"
+# TinyBERT (~4MB) fits 512MB free-tier hosts; override via RERANKER_LOCAL_MODEL.
+DEFAULT_FLASHRANK_MODEL = "ms-marco-TinyBERT-L-2-v2"
 
 
 class FlashRankReranker(BaseReranker):

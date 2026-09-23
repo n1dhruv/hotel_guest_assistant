@@ -27,6 +27,7 @@ from app.core.hybrid_retriever import (
     get_hybrid_retriever,
     reciprocal_rank_fusion,
 )
+from app.core.vector_store import get_embedder, get_vector_store
 
 __all__ = [
     "HybridRetriever",
@@ -89,10 +90,24 @@ def main():
         action="store_true",
         help="Output raw JSON results",
     )
+    parser.add_argument(
+        "--provider",
+        "-p",
+        type=str,
+        default=None,
+        help="Embedding provider for dense vector channel (auto, openrouter, nemotron, fastembed, deterministic)",
+    )
 
     args = parser.parse_args()
 
+    vs = None
+    if args.provider:
+        embedder = get_embedder(provider=args.provider)
+        vs = get_vector_store(force_new=True, embedder=embedder)
+
     retriever = get_hybrid_retriever(
+        vector_store=vs,
+        force_new=bool(args.provider),
         use_hyde=not args.no_hyde,
     )
 

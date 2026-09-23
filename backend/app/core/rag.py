@@ -93,21 +93,14 @@ class HotelKnowledgeBase:
         self.chunks = [sc.to_dict() for sc in self.semantic_chunks]
 
     def _init_retriever(self):
-        """Attempts OpenAI dense embeddings if key is present; otherwise initializes BM25 index."""
-        if settings.OPENAI_API_KEY and not settings.MOCK_LLM:
-            try:
-                from langchain_openai import OpenAIEmbeddings
-                embedder = OpenAIEmbeddings(
-                    openai_api_key=settings.OPENAI_API_KEY,
-                    model="text-embedding-3-small"
-                )
-                texts = [f"{c['title']}: {c['content']}" for c in self.chunks]
-                self.dense_embeddings = embedder.embed_documents(texts)
-                return
-            except Exception as e:
-                print(f"[RAG] OpenAI dense embeddings unavailable ({e}), defaulting to BM25 index.")
-
+        """Initializes BM25 index and connects to Qdrant vector store."""
         self._init_bm25()
+        self.vector_store = None
+        try:
+            from app.core.vector_store import get_vector_store
+            self.vector_store = get_vector_store()
+        except Exception as e:
+            print(f"[RAG] Qdrant vector store initialization note: {e}")
 
     def _tokenize(self, text: str) -> list[str]:
         text = normalize_text(text)
@@ -153,34 +146,22 @@ class HotelKnowledgeBase:
                 s += idf * (tf / (tf + 1.2)) * boost
         return s
 
-    def retrieve(self, query: str, k: int = 4) -> list[dict[str, Any]]:
+    def retrieve(self, query: str, k: int = 4, use_hyde: bool = False) -> list[dict[str, Any]]:
         """
-        Retrieves top-k relevant knowledge chunks using dense embeddings or BM25.
+        Retrieves top-k relevant knowledge chunks using dense embeddings (optionally with HyDE) or BM25.
         """
         if not query or not query.strip():
             return self.chunks[:k]
 
-        # 1. Use dense OpenAI embeddings if active
-        if self.dense_embeddings is not None and settings.OPENAI_API_KEY and not settings.MOCK_LLM:
+        # 1. Use Qdrant Vector Store dense retrieval if available
+        if self.vector_store is not None:
             try:
-                from langchain_openai import OpenAIEmbeddings
-                embedder = OpenAIEmbeddings(
-                    openai_api_key=settings.OPENAI_API_KEY,
-                    model="text-embedding-3-small"
-                )
-                q_emb = embedder.embed_query(query)
-                scores = []
-                for i, doc_emb in enumerate(self.dense_embeddings):
-                    dot = np.dot(q_emb, doc_emb)
-                    norm = (np.linalg.norm(q_emb) * np.linalg.norm(doc_emb)) or 1.0
-                    sim = float(dot / norm)
-                    chunk_copy = dict(self.chunks[i])
-                    chunk_copy["score"] = round(sim, 4)
-                    scores.append((sim, chunk_copy))
-                scores.sort(key=lambda x: x[0], reverse=True)
-                return [s[1] for s in scores[:k]]
-            except Exception:
-                pass
+                results = self.vector_store.search(query, top_k=k, use_hyde=use_hyde)
+                if results and len(results) >= 1:
+                    return results
+            except Exception as e:
+                logger_msg = f"[RAG] Vector store search failed ({e}), falling back to BM25."
+                print(logger_msg)
 
         # 2. Local BM25 Retrieval
         q_tokens = self._tokenize(query)

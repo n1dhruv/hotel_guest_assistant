@@ -25,6 +25,26 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     GROQ_API_KEY: str = ""
 
+    # Qdrant Vector DB Configuration
+    QDRANT_URL: str = ""
+    QDRANT_API_KEY: str = ""
+    QDRANT_COLLECTION: str = "hotel_knowledge_base"
+    QDRANT_STORAGE_PATH: Path = BASE_DIR / "app" / "data" / "qdrant_storage"
+    QDRANT_IN_MEMORY: bool = False
+
+    # Embedding Configuration: Strict LiteLLM gemini-embedding-2 (3072 dim, no dimension-skewing fallback)
+    EMBEDDING_PROVIDER: str = "gemini"
+    EMBEDDING_MODEL: str = "gemini/gemini-embedding-2"
+    EMBEDDING_DIMENSION: int = 3072
+    FORCE_REINDEX: bool = False
+
+    # HyDE (Hypothetical Document Embeddings) Query Pipeline
+    HYDE_ENABLED: bool = True
+    HYDE_MODEL: str = ""  # If empty, defaults to LLM_MODEL
+    HYDE_MAX_TOKENS: int = 80
+    HYDE_TEMPERATURE: float = 0.0
+    HYDE_TIMEOUT: float = 2.5
+
     MOCK_LLM: bool = False
     HOTEL_DATA_PATH: Path = BASE_DIR / "app" / "data" / "hotel_data.json"
     CORS_ORIGINS: list[str] | str = [

@@ -6,7 +6,9 @@ name = "hotel-guest-assistant"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-    "backend"
+    "backend",
+    "fastembed>=0.8.1",
+    "qdrant-client>=1.19.1",
 ]
 
 [tool.uv.sources]

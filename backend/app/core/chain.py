@@ -349,7 +349,7 @@ class AssistantOrchestrator:
                 }
                 return
 
-        used_fallback = "contact our concierge" in full_reply.lower() or "not in our records" in full_reply.lower()
+        used_fallback = "concierge" in full_reply.lower() or "not in our records" in full_reply.lower()
         yield {
             "type": "metadata",
             "tool_called": False,
@@ -418,7 +418,7 @@ class AssistantOrchestrator:
         else:
             reply = msg.content
 
-        used_fallback = "contact our concierge" in reply.lower() or "not in our records" in reply.lower()
+        used_fallback = "concierge" in reply.lower() or "not in our records" in reply.lower()
 
         return {
             "reply": reply,

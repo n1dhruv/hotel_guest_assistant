@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Calendar, Users, Search } from "lucide-react";
+import { Calendar, Search } from "lucide-react";
 
 interface DateGuestPickerProps {
   onSearch: (checkIn: string, checkOut: string, adults: number) => void;
@@ -9,7 +9,6 @@ interface DateGuestPickerProps {
 }
 
 export default function DateGuestPicker({ onSearch, isLoading = false }: DateGuestPickerProps) {
-  // Helper to format Date to YYYY-MM-DD
   const formatISO = (d: Date) => d.toISOString().split("T")[0];
 
   const today = new Date();
@@ -42,18 +41,20 @@ export default function DateGuestPicker({ onSearch, isLoading = false }: DateGue
   return (
     <form
       onSubmit={handleSubmit}
-      className="p-3.5 bg-slate-50 border border-slate-200/90 rounded-xl space-y-3 text-xs"
+      className="p-3.5 bg-black border border-[#222222] space-y-3 text-xs"
     >
-      <div className="flex items-center gap-1.5 font-semibold text-slate-800">
-        <Calendar className="w-4 h-4 text-emerald-700" />
-        <span>Select Dates & Guest Count</span>
+      <div className="flex items-center justify-between border-b border-[#1c1c1c] pb-2">
+        <div className="flex items-center gap-2 font-mono uppercase tracking-wider text-yellow-400 font-bold text-xs">
+          <Calendar className="w-3.5 h-3.5" />
+          <span>Select Dates & Guests</span>
+        </div>
+        <span className="text-[10px] font-mono text-zinc-400 uppercase">Live Inventory</span>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-        {/* Check-in Date */}
         <div>
-          <label className="block text-[11px] font-medium text-slate-600 mb-1">
-            Check-in Date
+          <label className="block text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1">
+            Check-In
           </label>
           <input
             type="date"
@@ -61,14 +62,13 @@ export default function DateGuestPicker({ onSearch, isLoading = false }: DateGue
             value={checkIn}
             onChange={handleCheckInChange}
             required
-            className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-600 text-xs"
+            className="w-full px-2.5 py-1.5 bg-black border border-[#262626] text-white focus:border-yellow-400 outline-none text-xs font-mono"
           />
         </div>
 
-        {/* Check-out Date */}
         <div>
-          <label className="block text-[11px] font-medium text-slate-600 mb-1">
-            Check-out Date
+          <label className="block text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1">
+            Check-Out
           </label>
           <input
             type="date"
@@ -76,19 +76,18 @@ export default function DateGuestPicker({ onSearch, isLoading = false }: DateGue
             value={checkOut}
             onChange={(e) => setCheckOut(e.target.value)}
             required
-            className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-600 text-xs"
+            className="w-full px-2.5 py-1.5 bg-black border border-[#262626] text-white focus:border-yellow-400 outline-none text-xs font-mono"
           />
         </div>
 
-        {/* Guest Count */}
         <div>
-          <label className="block text-[11px] font-medium text-slate-600 mb-1">
+          <label className="block text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1">
             Adult Guests
           </label>
           <select
             value={adults}
             onChange={(e) => setAdults(Number(e.target.value))}
-            className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-600 text-xs"
+            className="w-full px-2.5 py-1.5 bg-black border border-[#262626] text-white focus:border-yellow-400 outline-none text-xs font-mono"
           >
             <option value={1}>1 Adult</option>
             <option value={2}>2 Adults</option>
@@ -99,14 +98,16 @@ export default function DateGuestPicker({ onSearch, isLoading = false }: DateGue
         </div>
       </div>
 
+
       <button
         type="submit"
         disabled={isLoading}
-        className="w-full py-2 px-3 bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-400 text-white font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-xs"
+        className="w-full py-2 px-3 bg-yellow-400 hover:bg-yellow-300 disabled:bg-[#202026] text-black disabled:text-zinc-600 font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-xs font-mono"
       >
         <Search className="w-3.5 h-3.5" />
-        {isLoading ? "Checking Live Inventory..." : "Check Availability & Rates"}
+        {isLoading ? "Querying Room Database..." : "Check Availability & Tariffs"}
       </button>
     </form>
   );
 }
+

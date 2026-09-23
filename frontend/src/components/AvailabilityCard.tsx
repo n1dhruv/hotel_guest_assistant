@@ -35,14 +35,16 @@ export default function AvailabilityCard({ data }: AvailabilityCardProps) {
 
   if (!data.available) {
     return (
-      <div className="mt-3 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-sm">
+      <div className="mt-3 p-4 bg-black border border-yellow-500/40 text-yellow-200 text-xs font-mono">
         <div className="flex items-start gap-3">
-          <div className="p-2 rounded-lg bg-amber-100 text-amber-700 shrink-0">
-            <PhoneCall className="w-5 h-5" />
+          <div className="p-2 bg-yellow-400 text-black shrink-0 font-bold">
+            <PhoneCall className="w-4 h-4" />
           </div>
           <div>
-            <h4 className="font-semibold text-amber-950">Room Notice</h4>
-            <p className="mt-1 text-amber-800">{data.message || "No rooms currently available for the selected dates."}</p>
+            <h4 className="font-bold text-yellow-400 uppercase tracking-wider">Inventory Update</h4>
+            <p className="mt-1 text-zinc-300 leading-relaxed">
+              {data.message || "No inventory available for the requested dates. Please adjust dates or contact front desk."}
+            </p>
           </div>
         </div>
       </div>
@@ -50,21 +52,21 @@ export default function AvailabilityCard({ data }: AvailabilityCardProps) {
   }
 
   return (
-    <div className="mt-3 space-y-3">
+    <div className="mt-3 space-y-3 font-sans">
       {/* Stay Overview Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-xl text-xs">
-        <div className="flex items-center gap-2 text-emerald-900 font-medium">
-          <Calendar className="w-4 h-4 text-emerald-700" />
-          <span>
-            {data.checkIn} to {data.checkOut}
+      <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-black border border-[#222222] text-xs">
+        <div className="flex items-center gap-2 text-zinc-200 font-mono">
+          <Calendar className="w-3.5 h-3.5 text-yellow-400" />
+          <span className="font-semibold text-white">
+            {data.checkIn} — {data.checkOut}
           </span>
-          <span className="text-emerald-500 font-bold">•</span>
-          <span>
+          <span className="text-yellow-400">•</span>
+          <span className="text-zinc-400">
             {data.nights} {data.nights === 1 ? "night" : "nights"}
           </span>
         </div>
-        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100/70 text-emerald-800 rounded-full font-medium">
-          <Users className="w-3.5 h-3.5" />
+        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[#111111] border border-[#262626] text-yellow-400 text-[11px] font-mono">
+          <Users className="w-3 h-3" />
           <span>{data.adults} Guest{data.adults && data.adults > 1 ? "s" : ""}</span>
         </div>
       </div>
@@ -76,43 +78,47 @@ export default function AvailabilityCard({ data }: AvailabilityCardProps) {
           return (
             <div
               key={room.id}
-              className={`p-4 rounded-xl border transition-all duration-200 flex flex-col justify-between ${
+              className={`p-3.5 border transition-colors flex flex-col justify-between ${
                 isSelected
-                  ? "bg-emerald-50/70 border-emerald-500 shadow-md ring-1 ring-emerald-500"
-                  : "bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm"
+                  ? "bg-[#111111] border-yellow-400"
+                  : "bg-black border-[#222222] hover:border-[#333333]"
               }`}
             >
               <div>
                 <div className="flex items-start justify-between gap-2">
-                  <h4 className="font-semibold text-slate-900 text-sm leading-tight">{room.type}</h4>
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 shrink-0">
-                    <Users className="w-3 h-3 mr-1" />
+                  <h4 className="font-bold text-white text-xs sm:text-sm tracking-wide uppercase">
+                    {room.type}
+                  </h4>
+                  <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono bg-[#141414] text-yellow-400 border border-[#262626] shrink-0">
+                    <Users className="w-2.5 h-2.5 mr-1" />
                     Max {room.maxGuests}
                   </span>
                 </div>
 
                 {room.bedType && (
-                  <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-1.5">
-                    <Bed className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 mt-1.5 font-mono">
+                    <Bed className="w-3 h-3 text-zinc-500 shrink-0" />
                     <span className="truncate">{room.bedType}</span>
                   </div>
                 )}
 
                 {room.description && (
-                  <p className="text-xs text-slate-600 mt-2 line-clamp-2 leading-relaxed">
+                  <p className="text-xs text-zinc-300 mt-2 line-clamp-2 leading-relaxed">
                     {room.description}
                   </p>
                 )}
               </div>
 
-              <div className="mt-3 pt-3 border-t border-slate-100">
+              <div className="mt-3 pt-3 border-t border-[#1c1c1c]">
                 <div className="flex items-baseline justify-between">
                   <div>
-                    <span className="text-base font-bold text-slate-950">₹{room.pricePerNight?.toLocaleString("en-IN")}</span>
-                    <span className="text-[11px] text-slate-500 font-normal"> / night</span>
+                    <span className="text-sm sm:text-base font-bold text-yellow-400 font-mono">
+                      ₹{room.pricePerNight?.toLocaleString("en-IN")}
+                    </span>
+                    <span className="text-[10px] text-zinc-400 font-mono"> / night</span>
                   </div>
                   {data.nights && data.nights > 1 && (
-                    <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                    <span className="text-[10px] font-mono text-zinc-300 bg-[#141414] px-1.5 py-0.5 border border-[#262626]">
                       Total: ₹{room.totalPrice?.toLocaleString("en-IN")}
                     </span>
                   )}
@@ -121,10 +127,10 @@ export default function AvailabilityCard({ data }: AvailabilityCardProps) {
                 <button
                   type="button"
                   onClick={() => setReservedRoomId(isSelected ? null : room.id)}
-                  className={`mt-2.5 w-full py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                  className={`mt-2.5 w-full py-2 px-3 text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
                     isSelected
-                      ? "bg-emerald-700 text-white hover:bg-emerald-800"
-                      : "bg-slate-900 text-white hover:bg-slate-800"
+                      ? "bg-yellow-400 text-black hover:bg-yellow-300"
+                      : "bg-[#141414] hover:bg-yellow-400 hover:text-black text-white border border-[#262626]"
                   }`}
                 >
                   {isSelected ? (
@@ -134,7 +140,7 @@ export default function AvailabilityCard({ data }: AvailabilityCardProps) {
                     </>
                   ) : (
                     <>
-                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                      <Sparkles className="w-3.5 h-3.5 text-yellow-400" />
                       Select Room
                     </>
                   )}
@@ -147,3 +153,5 @@ export default function AvailabilityCard({ data }: AvailabilityCardProps) {
     </div>
   );
 }
+
+

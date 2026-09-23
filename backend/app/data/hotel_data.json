@@ -89,63 +89,59 @@
   "faqs": [
     {
       "id": "faq-1",
-      "q": "What time is check-in?",
-      "a": "Standard check-in begins at 2:00 PM IST. Early check-in starting from 10:00 AM can be arranged subject to room availability."
+      "topic": "Check-in and check-out time",
+      "answer": "Standard check-in begins at 2:00 PM IST. Early check-in starting from 10:00 AM can be arranged subject to room availability upon arrival. Check-out time is by 11:00 AM IST. Late check-out until 2:00 PM may be requested at the front desk, subject to availability."
     },
     {
       "id": "faq-2",
-      "q": "What time is check-out?",
-      "a": "Check-out time is by 11:00 AM IST. Late check-out until 2:00 PM may be requested at the front desk, subject to availability."
+      "topic": "Swimming pool",
+      "answer": "The resort features a temperature-controlled outdoor oceanview infinity pool overlooking Candolim Beach, open daily from 6:00 AM to 9:00 PM with complimentary towels and poolside beverage service."
     },
     {
       "id": "faq-3",
-      "q": "Does the hotel have a swimming pool?",
-      "a": "Yes! The resort features a temperature-controlled outdoor oceanview infinity pool overlooking Candolim Beach, open daily from 6:00 AM to 9:00 PM with complimentary towels and poolside beverage service."
+      "topic": "Complimentary breakfast",
+      "answer": "Complimentary Royal Buffet Breakfast is included for all registered hotel guests daily from 7:00 AM to 10:30 AM (until 11:00 AM on Sundays), featuring South Indian, North Indian, continental, and dedicated pure vegetarian & Jain options."
     },
     {
       "id": "faq-4",
-      "q": "Is breakfast included?",
-      "a": "Yes, complimentary Royal Buffet Breakfast is included for all registered hotel guests daily from 7:00 AM to 10:30 AM (until 11:00 AM on Sundays), featuring South Indian, North Indian, continental, and dedicated pure vegetarian & Jain options."
+      "topic": "Room suitability for three guests",
+      "answer": "Our Deluxe King Room (max 3 guests with a rollaway extra bed on request) or our Family Executive Suite (max 4 guests with 1 King and 2 Twin beds in separate rooms) are ideal choices."
     },
     {
       "id": "faq-5",
-      "q": "Which room is suitable for three guests?",
-      "a": "Our Deluxe King Room (max 3 guests with a rollaway extra bed on request) or our Family Executive Suite (max 4 guests with 1 King and 2 Twin beds in separate rooms) are ideal choices."
+      "topic": "Cancellation policy",
+      "answer": "We offer free cancellation up to 24 hours prior to check-in (2:00 PM IST). Cancellations made within 24 hours incur a charge for the first night."
     },
     {
       "id": "faq-6",
-      "q": "What is the cancellation policy?",
-      "a": "We offer free cancellation up to 24 hours prior to check-in (2:00 PM IST). Cancellations made within 24 hours incur a charge for the first night."
+      "topic": "Parking facilities",
+      "answer": "We provide complimentary on-site covered parking with 24/7 security and Tata Power / universal EV charging stations for resident guests. Complimentary valet service is also provided."
     },
     {
       "id": "faq-7",
-      "q": "Do you have parking facilities?",
-      "a": "Yes, we provide complimentary on-site covered parking with 24/7 security and Tata Power / universal EV charging stations for resident guests. Complimentary valet service is also provided."
+      "topic": "Pet policy",
+      "answer": "Pets are strictly not allowed on resort grounds, except for certified service animals with valid documentation."
     },
     {
       "id": "faq-8",
-      "q": "Are pets allowed?",
-      "a": "Pets are strictly not allowed on resort grounds, except for certified service animals with valid documentation."
+      "topic": "Government ID requirement",
+      "answer": "As per Government of India guidelines, all adult guests must present an original government-issued photo ID with address proof (Aadhaar Card, Passport, Voter ID, or Driving License). PAN cards are not accepted as proof of address."
     },
     {
       "id": "faq-9",
-      "q": "What government ID is required at check-in?",
-      "a": "As per Government of India guidelines, all adult guests must present an original government-issued photo ID with address proof (Aadhaar Card, Passport, Voter ID, or Driving License). PAN cards are not accepted as proof of address."
+      "topic": "Pure vegetarian and Jain food",
+      "answer": "Our Saffron Coastal & Spice restaurant maintains a separate dedicated pure vegetarian kitchen area and serves authentic Jain dishes (prepared without onion or garlic) upon request."
     },
     {
       "id": "faq-10",
-      "q": "Is pure vegetarian and Jain food available?",
-      "a": "Yes, our Saffron Coastal & Spice restaurant maintains a separate dedicated pure vegetarian kitchen area and serves authentic Jain dishes (prepared without onion or garlic) upon request."
+      "topic": "Resort highlights and benefits",
+      "answer": "Guests at The Grand Azure Heritage Resort & Spa enjoy premier beachfront luxury on Candolim Beach, a temperature-controlled oceanview infinity pool, complimentary Royal Buffet Breakfast with live counters and Pure Veg/Jain sections, authentic Kerala Ayurvedic spa treatments and 24/7 fitness gym, complimentary 500 Mbps high-speed Wi-Fi, 24/7 valet parking with EV charging stations, and fine dining at Saffron Coastal & Spice with authentic Goan seafood and a separate vegetarian kitchen."
     },
     {
       "id": "faq-11",
-      "q": "What are the benefits of this hotel?",
-      "a": "Guests at The Grand Azure Heritage Resort & Spa enjoy premier beachfront luxury on Candolim Beach, a temperature-controlled oceanview infinity pool, complimentary Royal Buffet Breakfast with live counters and Pure Veg/Jain sections, authentic Kerala Ayurvedic spa treatments and 24/7 fitness gym, complimentary 500 Mbps high-speed Wi-Fi, 24/7 valet parking with EV charging stations, and fine dining at Saffron Coastal & Spice with authentic Goan seafood and a separate vegetarian kitchen."
-    },
-    {
-      "id": "faq-12",
-      "q": "What amenities and facilities does the resort offer?",
-      "a": "The Grand Azure Resort offers comprehensive luxury amenities including an oceanview infinity pool overlooking Candolim Beach, AyurVeda Spa & 24/7 fitness center, complimentary daily Royal Buffet Breakfast, high-speed fiber Wi-Fi throughout the resort, secure covered valet parking with universal EV fast-chargers, and Saffron Coastal & Spice fine-dining restaurant."
+      "topic": "Resort amenities and facilities summary",
+      "answer": "The Grand Azure Resort offers comprehensive luxury amenities including an oceanview infinity pool overlooking Candolim Beach, AyurVeda Spa & 24/7 fitness center, complimentary daily Royal Buffet Breakfast, high-speed fiber Wi-Fi throughout the resort, secure covered valet parking with universal EV fast-chargers, and Saffron Coastal & Spice fine-dining restaurant."
     }
   ]
 }
+

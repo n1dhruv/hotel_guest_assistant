@@ -47,22 +47,20 @@ Every message passes through `app/core/guard.py` before hitting any language mod
 
 ### 2. Knowledge Retrieval (RAG)
 Hotel ground truth is stored in `backend/app/data/hotel_data.json` covering:
-- Property overview and contact details
-- Resort amenities (pool, spa, gym, breakfast, parking, dining)
-- Room tiers, capacities, and base rates
-- Policies (cancellation, check-in/out, ID verification, pets, children, smoking, payments)
-- Curated guest FAQs
+- **Property**: Resort overview, location, address, contact details, and standard check-in/out hours.
+- **Amenities**: 6 distinct facilities (Infinity Pool, Azure Spa & Wellness, Fitness Centre, Coastal Spice Restaurant, Valet Parking, High-Speed Wi-Fi) with exact operating hours and descriptions.
+- **Rooms**: 4 room tiers with capacity limits, base tariffs, bedding layouts, and room features.
+- **Policies**: 7 operational policies (Cancellation & Refund, Check-in & Check-out Timings, ID Verification & Documentation, Pet Policy, Child Occupancy & Extra Bed, Smoking Policy, Payment & Invoicing).
+- **Curated FAQs**: 11 topic-based reference entries (such as check-in/out schedules, pool access, breakfast inclusions, parking, dining) stored as factual topic-and-answer pairs without verbatim question prompts, ensuring retrieval operates on semantic content rather than artificial question string matching.
 
-At startup, `app/core/rag.py` splits this data into semantic chunks and indexes them with an in-memory BM25 lexical retriever. The retriever applies custom text normalization (such as unifying "check-in" to "checkin"), stopword filtering, morphological suffix stemming, title weighting, and synonym expansion. If an OpenAI API key is supplied, dense vector embeddings (`text-embedding-3-small`) can optionally be used instead.
+At startup, `app/core/rag.py` splits this data into 29 canonical semantic chunks and indexes them with an in-memory BM25 lexical retriever. The retriever applies text normalization (such as unifying "check-in" to "checkin"), stopword filtering, morphological suffix stemming, title weighting, and synonym expansion. If an OpenAI API key is supplied, dense vector embeddings (`text-embedding-3-small`) can optionally be used instead.
 
 ### 3. Answer Synthesis and Deduplication
-In the hotel dataset, information often appears in multiple formats. For example, the swimming pool is documented both as an amenity catalog item and as a conversational FAQ.
-
-To prevent redundant duplicate answers:
-- Each chunk has an assigned canonical topic (`pool`, `breakfast`, `checkin`, `checkout`, `cancellation`, etc.).
-- When resolving specific questions, candidate chunks are grouped by topic, and the system selects the single most conversational chunk (preferring FAQ answers over raw catalog entries).
-- For compound questions (such as asking for both check-in and check-out times in a single sentence), both topics are recognized and answered together.
-- For broad questions (such as asking for all amenities or an overview of the resort), dedicated synthesis functions format comprehensive, categorized listings from the entire knowledge base.
+Because the knowledge base contains factual topics and domain entities without scripted question prompts:
+- Each chunk has an assigned canonical topic (`pool`, `breakfast`, `checkincheckout`, `cancellation`, `id_verification`, etc.).
+- When resolving specific questions, candidate chunks are grouped by topic to eliminate repetitive responses.
+- For compound questions (such as asking for both check-in and check-out times in a single sentence), all related topics are identified and combined in the answer.
+- For broad questions (such as asking for all amenities or an overview of the resort), dedicated synthesis logic formats comprehensive listings from the entire knowledge base.
 
 ### 4. Room Availability Engine
 Availability checks run through `app/core/tools.py`. The tool:
@@ -75,10 +73,12 @@ Availability checks run through `app/core/tools.py`. The tool:
 
 ### 5. Frontend Experience
 The interface is built with Next.js and Tailwind CSS:
-- **Typewriter streaming**: Rather than waiting for a full payload, the response reveals progressively with a blinking cursor at human reading speed.
-- **Structured cards**: When room availability is checked, interactive room tier cards display prices, bedding details, and capacity badges.
-- **Date picker**: Appears automatically whenever the assistant detects that booking dates were omitted.
-- **Quick prompts**: Pre-set buttons for common queries like check-in times, pool hours, cancellation policies, and breakfast.
+- **Fully Responsive Layout**: Built to adapt across mobile phones, tablets, and desktop displays with dynamic viewport height sizing (`100dvh`) and mobile navigation drawers.
+- **Hotel Data JSON Viewer**: An interactive modal that displays the complete `hotel_data.json` ground truth dataset directly in the application. Users can filter by category (Property, Amenities, Rooms, Policies, FAQs) and copy the JSON payload with one click.
+- **Typewriter Streaming**: Responses reveal progressively with a blinking cursor at human reading speed.
+- **Structured Room Cards**: When room availability is checked, room tier cards display prices, bedding details, and capacity badges.
+- **Date Picker**: Appears automatically whenever the assistant detects that booking dates were omitted.
+- **Quick Prompts**: Shortcut buttons for common queries like check-in times, pool hours, cancellation policies, and breakfast.
 
 ---
 
@@ -111,14 +111,14 @@ The interface is built with Next.js and Tailwind CSS:
 |   |   |   |-- hotel_data.json    # Verified hotel knowledge base
 |   |   |-- config.py              # Environment configuration via Pydantic
 |   |   |-- main.py                # FastAPI application entrypoint
-|   |-- tests/                     # 27 automated unit and integration tests
+|   |-- tests/                     # 28 automated unit and integration tests
 |   |-- pyproject.toml             # Python package configuration
 |   |-- .env                       # Backend environment settings
 |-- frontend/
 |   |-- src/
 |   |   |-- app/                   # Next.js App Router pages and layout
 |   |   |-- components/
-|   |   |   |-- ChatInterface.tsx  # Main interactive chat console
+|   |   |   |-- ChatInterface.tsx  # Main interactive chat console and data modal
 |   |   |   |-- AvailabilityCard.tsx # Room inventory & pricing display
 |   |   |   |-- DateGuestPicker.tsx  # Inline booking dates selector
 |   |   |   |-- FormattedMessage.tsx # Markdown renderer for assistant messages
@@ -206,13 +206,16 @@ Main conversational endpoint. Accepts conversation history and returns the assis
 **Response:**
 ```json
 {
-  "reply": "Standard check-in begins at 2:00 PM IST. Early check-in starting from 10:00 AM can be arranged subject to room availability.\n\nCheck-out time is by 11:00 AM IST. Late check-out until 2:00 PM may be requested at the front desk, subject to availability.",
+  "reply": "**Check-in and Check-out Timings:** Standard check-in begins at 2:00 PM. Check-out is by 11:00 AM. Early check-in (from 10:00 AM) and late check-out (up to 2:00 PM) are subject to room availability upon request.",
   "tool_called": false,
   "availability": null,
   "used_fallback": false,
   "injection_blocked": false,
   "needs_dates": false,
-  "retrieved_sources": ["FAQ: What time is check-in?", "FAQ: What time is check-out?"],
+  "retrieved_sources": [
+    "Policy: Check-in and Check-out Timings",
+    "About The Grand Azure Heritage Resort & Spa"
+  ],
   "latency_ms": 0.8
 }
 ```
@@ -232,6 +235,9 @@ Direct endpoint for querying room rates and capacity without going through the c
 }
 ```
 
+### `GET /api/hotel-data`
+Returns the complete, authoritative `hotel_data.json` ground truth dataset used by the RAG index and the frontend data modal.
+
 ### `GET /api/stats`
 Telemetry endpoint that reports real-time metrics including total requests, tool call rates, injection blocks, and average latency.
 
@@ -248,4 +254,4 @@ cd backend
 uv run pytest
 ```
 
-All 27 test cases run against the local test suite without requiring third-party API credentials.
+All 28 test cases run against the local test suite without requiring third-party API credentials.

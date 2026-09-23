@@ -20,24 +20,43 @@ STOPWORDS = {
 }
 
 SYNONYMS = {
-    "cancel": ["cancellation", "cancellations", "cancelling", "cancelled"],
-    "cancellation": ["cancel", "cancelling", "cancelled"],
+    "cancel": ["cancellation", "cancellations", "cancelling", "cancelled", "refund"],
+    "cancellation": ["cancel", "cancelling", "cancelled", "refund"],
     "cancelling": ["cancel", "cancellation"],
     "reservation": ["booking", "bookings", "reserve", "reservations"],
     "reserve": ["reservation", "booking", "reservations"],
     "booking": ["reservation", "reserve", "bookings"],
     "bookings": ["reservation", "booking"],
-    "dog": ["pets"], "dogs": ["pets"], "cat": ["pets"], "cats": ["pets"],
-    "smoke": ["smoking"], "smoking": ["smoke"], "cig": ["smoking"], "cigarettes": ["smoking"],
-    "wifi": ["wi-fi", "internet"], "internet": ["wifi"],
-    "food": ["breakfast", "restaurant", "dining"],
-    "dinner": ["restaurant", "dining"], "lunch": ["restaurant", "dining"],
+    "dog": ["pets"], "dogs": ["pets"], "cat": ["pets"], "cats": ["pets"], "pet": ["pets"],
+    "smoke": ["smoking"], "smoking": ["smoke"], "cig": ["smoking"], "cigarettes": ["smoking"], "cigarette": ["smoking"],
+    "wifi": ["wi-fi", "internet", "fiber"], "internet": ["wifi", "wi-fi", "fiber"],
+    "breakfast": ["buffet", "morning", "dining", "food", "royal"],
+    "food": ["breakfast", "restaurant", "dining", "coastal", "spice", "vegetarian", "jain"],
+    "dinner": ["restaurant", "dining", "food"], "lunch": ["restaurant", "dining", "food"],
+    "vegetarian": ["veg", "pure", "jain", "saffron", "restaurant", "food"],
+    "jain": ["vegetarian", "veg", "saffron", "restaurant", "food"],
     "location": ["address", "candolim", "located"], "located": ["location", "address", "candolim"],
     "address": ["location", "candolim", "located"], "reach": ["location", "address", "candolim"],
-    "pool": ["swimming", "infinity", "pool"], "swimming": ["pool", "infinity"],
-    "gym": ["fitness", "spa"], "workout": ["fitness", "gym"], "spa": ["massage", "wellness"],
-    "id": ["aadhaar", "passport", "identity", "verification"],
-    "aadhaar": ["id", "identity", "verification"],
+    "pool": ["swimming", "infinity", "pool", "temperature"], "swimming": ["pool", "infinity"],
+    "gym": ["fitness", "spa", "workout"], "workout": ["fitness", "gym", "cardio"],
+    "spa": ["massage", "wellness", "fitness", "ayurveda"],
+    "id": ["aadhaar", "passport", "identity", "verification", "voter"],
+    "aadhaar": ["id", "identity", "verification", "passport"],
+    "document": ["id", "aadhaar", "passport", "verification"],
+    "documents": ["id", "aadhaar", "passport", "verification"],
+    "parking": ["valet", "car", "vehicle", "ev", "charging"],
+    "car": ["parking", "valet", "ev"], "vehicle": ["parking", "valet", "ev"],
+    "ev": ["parking", "valet", "charging", "tata"],
+    "pay": ["payment", "upi", "card", "billing", "rupay", "visa"],
+    "payment": ["pay", "upi", "card", "rupay", "visa", "gst"],
+    "checkin": ["arrival", "arrive", "time", "timings", "timing", "hours"],
+    "checkout": ["departure", "leave", "time", "timings", "timing", "hours"],
+    "timing": ["timings", "hours", "time"],
+    "timings": ["timing", "hours", "time"],
+    "people": ["guests", "persons", "adults", "capacity"],
+    "person": ["guest", "adult"],
+    "children": ["kids", "child", "bedding"],
+    "kids": ["children", "child", "bedding"],
 }
 
 def normalize_text(text: str) -> str:
@@ -71,7 +90,7 @@ class HotelKnowledgeBase:
         with open(self.data_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        # Canonical topic maps for cross-category deduplication
+        # Canonical topic maps
         amenity_topics = ["pool", "spa_gym", "breakfast", "wifi", "parking", "dining"]
         policy_topics = {
             "cancellation": "cancellation",
@@ -81,18 +100,6 @@ class HotelKnowledgeBase:
             "children": "children",
             "smoking": "smoking",
             "payment": "payment"
-        }
-        faq_topics = {
-            "faq-1": "checkin",
-            "faq-2": "checkout",
-            "faq-3": "pool",
-            "faq-4": "breakfast",
-            "faq-5": "room_recommendation",
-            "faq-6": "cancellation",
-            "faq-7": "parking",
-            "faq-8": "pets",
-            "faq-9": "id_verification",
-            "faq-10": "dining"
         }
 
         # 1. Property Overview Chunk
@@ -138,26 +145,51 @@ class HotelKnowledgeBase:
 
         # 4. Policy Chunks
         policies = data.get("policies", {})
+        policy_display_names = {
+            "cancellation": "Cancellation & Refund",
+            "checkInCheckOut": "Check-in and Check-out Timings",
+            "idVerification": "ID Verification & Documentation",
+            "pets": "Pet Policy",
+            "children": "Child Occupancy & Extra Bed",
+            "smoking": "Smoking Policy",
+            "payment": "Payment & Invoicing"
+        }
         for pol_key, pol_val in policies.items():
             topic = policy_topics.get(pol_key, f"policy_{pol_key}")
+            display_name = policy_display_names.get(pol_key, pol_key.capitalize())
             self.chunks.append({
                 "id": f"policy-{pol_key}",
                 "category": "policy",
                 "topic": topic,
-                "title": f"Policy: {pol_key.capitalize()}",
-                "content": f"The Grand Azure Resort {pol_key.capitalize()} Policy: {pol_val}"
+                "title": f"Policy: {display_name}",
+                "content": f"The Grand Azure Resort {display_name} Policy: {pol_val}"
             })
 
-        # 5. Curated FAQ Chunks
+        # 5. Curated FAQ Chunks (Stored as topics and factual answers, without questions)
+        faq_topic_keys = {
+            "faq-1": "checkincheckout",
+            "faq-2": "pool",
+            "faq-3": "breakfast",
+            "faq-4": "room_recommendation",
+            "faq-5": "cancellation",
+            "faq-6": "parking",
+            "faq-7": "pets",
+            "faq-8": "id_verification",
+            "faq-9": "dining",
+            "faq-10": "highlights",
+            "faq-11": "amenities_summary"
+        }
         for faq in data.get("faqs", []):
             faq_id = faq.get("id", "")
-            topic = faq_topics.get(faq_id, f"faq_{faq_id}")
+            topic_str = faq.get("topic") or faq.get("title", "")
+            topic_key = faq_topic_keys.get(faq_id, f"faq_{faq_id}")
+            answer_text = faq.get("answer") or faq.get("a", "")
             self.chunks.append({
                 "id": faq_id,
                 "category": "faq",
-                "topic": topic,
-                "title": f"FAQ: {faq.get('q')}",
-                "content": f"Guest Question: {faq.get('q')} | Verified Answer: {faq.get('a')}"
+                "topic": topic_key,
+                "title": f"FAQ: {topic_str}",
+                "content": f"{topic_str}: {answer_text}"
             })
 
     def _init_retriever(self):

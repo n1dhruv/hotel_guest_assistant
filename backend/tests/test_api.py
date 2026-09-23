@@ -78,3 +78,19 @@ def test_direct_availability_endpoint():
     assert data["available"] is True
     assert data["nights"] == 3
     assert len(data["rooms"]) >= 1
+
+def test_hotel_data_endpoint():
+    res = client.get("/api/hotel-data")
+    assert res.status_code == 200
+    data = res.json()
+    assert "property" in data
+    assert "amenities" in data
+    assert "rooms" in data
+    assert "policies" in data
+    assert "faqs" in data
+    for faq in data["faqs"]:
+        assert "q" not in faq
+        assert "question" not in faq
+        assert "topic" in faq
+        assert "answer" in faq
+

@@ -38,3 +38,14 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Documentation, Plans & Progress Trackers
+docs/
+PROGRESS.md
+*.pdf
+
+# Vector DB Local Storage
+backend/app/data/qdrant_storage/
+backend/app/data/chroma_db/
+qdrant_storage/
+chroma_db/

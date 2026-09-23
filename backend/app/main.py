@@ -43,6 +43,20 @@ def root():
 def health():
     return {"status": "healthy"}
 
+@app.get("/api/hotel-data")
+def get_hotel_data():
+    from pathlib import Path
+    import json
+    from fastapi import HTTPException
+    from fastapi.responses import JSONResponse
+
+    hotel_data_path = Path(__file__).resolve().parent / "data" / "hotel_data.json"
+    if not hotel_data_path.exists():
+        raise HTTPException(status_code=404, detail="Hotel data file not found")
+    with open(hotel_data_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return JSONResponse(content=data)
+
 def start():
     """Entrypoint to launch uvicorn directly via 'uv run backend' or Render."""
     import os

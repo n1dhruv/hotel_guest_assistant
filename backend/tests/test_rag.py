@@ -2,7 +2,7 @@ import pytest
 from app.core.rag import kb
 
 def test_kb_chunk_counts():
-    assert len(kb.chunks) >= 20
+    assert len(kb.chunks) == 29
     categories = {c["category"] for c in kb.chunks}
     assert "property" in categories
     assert "amenity" in categories

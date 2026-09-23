@@ -63,19 +63,28 @@ def _synthesize_amenities(_chunks: list[dict]) -> str:
     amenities = [c for c in kb.chunks if c.get("category") == "amenity"]
     if not amenities:
         return "I'm sorry, I don't have detailed amenity information available right now."
-    lines = [f"✨ **{a['title'].replace('Amenity: ', '')}:** {a['content']}" for a in amenities]
+    lines = []
+    for a in amenities:
+        title = a['title'].replace('Amenity: ', '').strip()
+        content = a['content']
+        if " | Timings: " in content and ". Description: " in content:
+            _, rest = content.split(" | Timings: ", 1)
+            timings, desc = rest.split(". Description: ", 1)
+            lines.append(f"• **{title}** ({timings.strip()}):\n  {desc.strip()}")
+        else:
+            lines.append(f"• **{title}:** {content}")
     return (
-        f"Namaste! Here are all {len(amenities)} amenities at The Grand Azure Heritage Resort & Spa:\n\n"
+        f"Namaste! Here are all {len(amenities)} resort amenities at The Grand Azure Heritage Resort & Spa:\n\n"
         + "\n\n".join(lines)
     )
 
 
 def _synthesize_broad_answer(_chunks: list[dict]) -> str:
-    """Comprehensive overview built from ALL kb.chunks — not limited by retrieval k."""
+    """Comprehensive overview built from ALL 18 ground truth kb.chunks."""
     groups: dict[str, list[dict]] = {"property": [], "amenity": [], "room": [], "policy": []}
     seen_keys: set[str] = set()
 
-    for chunk in kb.chunks:           # ← always the full 28 chunks
+    for chunk in kb.chunks:
         category = chunk.get("category", "")
         key = f"{category}-{chunk.get('title', '')}"
         if key in seen_keys or category not in groups:
@@ -116,6 +125,41 @@ def _synthesize_broad_answer(_chunks: list[dict]) -> str:
         )
 
     return kb.chunks[0]["content"] if kb.chunks else "I apologize, I do not have that information available."
+
+
+def _synthesize_rooms() -> str:
+    """Return ALL room tiers directly from the KB."""
+    rooms = [c for c in kb.chunks if c.get("category") == "room"]
+    if not rooms:
+        return "I'm sorry, I don't have room information available right now."
+    lines = []
+    for r in rooms:
+        title = r['title'].replace('Room: ', '').strip()
+        lines.append(f"• **{title}:** {r['content']}")
+    return (
+        f"Namaste! Here are our {len(rooms)} room types at The Grand Azure Heritage Resort & Spa:\n\n"
+        + "\n\n".join(lines)
+    )
+
+
+def _synthesize_policies() -> str:
+    """Return ALL policy chunks directly from the KB."""
+    policies = [c for c in kb.chunks if c.get("category") == "policy"]
+    if not policies:
+        return "I'm sorry, I don't have policy information available right now."
+    lines = []
+    for p in policies:
+        title = p['title'].replace('Policy: ', '').strip()
+        content = p['content']
+        if "Policy: " in content:
+            _, policy_text = content.split("Policy: ", 1)
+            lines.append(f"• **{title}:** {policy_text.strip()}")
+        else:
+            lines.append(f"• **{title}:** {content}")
+    return (
+        f"Namaste! Here are our {len(policies)} resort policies at The Grand Azure Heritage Resort & Spa:\n\n"
+        + "\n\n".join(lines)
+    )
 
 
 
@@ -442,9 +486,26 @@ class AssistantOrchestrator:
             top_chunk = retrieved[0]
             top_score = top_chunk.get("score", 0.0)
 
-            # Amenity-specific listing query — show all amenity chunks
-            amenity_list_keywords = ["amenities", "all amenities", "all facilities", "facilities", "what amenities"]
-            is_amenity_list = any(k in q_lower for k in amenity_list_keywords)
+            # Amenity-list query — ONLY when asking generically, not about one amenity.
+            # Old bug: bare "facilities" matched "parking facilities?" -> dumped all 6 amenities.
+            _SPECIFIC_AMENITY_WORDS = {
+                "pool", "swimming", "spa", "gym", "fitness", "massage",
+                "breakfast", "buffet", "wifi", "wi-fi", "internet",
+                "parking", "valet", "ev", "car",
+                "restaurant", "dining", "dinner", "lunch", "food", "saffron",
+                "jain", "vegetarian", "veg",
+            }
+            _has_specific_amenity = any(w in q_lower for w in _SPECIFIC_AMENITY_WORDS)
+            _has_generic_word = ("amenit" in q_lower or "facilit" in q_lower)
+            _has_lister_word = any(
+                w in q_lower for w in ("all", "list", "show", "what", "offer", "overview", "summar", "every")
+            )
+            if "amenit" in q_lower:
+                is_amenity_list = not _has_specific_amenity
+            elif "facilit" in q_lower:
+                is_amenity_list = (not _has_specific_amenity) and _has_lister_word
+            else:
+                is_amenity_list = False
 
             if is_amenity_list:
                 reply = _synthesize_amenities(retrieved)
@@ -457,15 +518,73 @@ class AssistantOrchestrator:
                     "retrieved_sources": sources
                 }
 
-            # General broad-question detection — synthesize grouped overview
-            broad_keywords = [
-                "benefit", "benefits", "feature", "features", "offer", "offers",
-                "highlight", "highlights", "about", "overview", "tell me",
-                "what do you have", "what is special", "what makes", "speciality",
-                "what all", "everything", "all about", "describe", "list",
-                "all policies", "room types", "all rooms"
-            ]
-            is_broad_query = any(k in q_lower for k in broad_keywords)
+            # Focused list intents — rooms / policies get their own concise list,
+            # NOT the full 18-chunk overview.
+            _is_rooms_list = (
+                ("room type" in q_lower or "room-types" in q_lower or "all rooms" in q_lower)
+                or ("all" in q_lower and "room" in q_lower)
+            ) and not has_dates
+            if _is_rooms_list:
+                reply = _synthesize_rooms()
+                return {
+                    "reply": reply,
+                    "tool_called": False,
+                    "availability": None,
+                    "used_fallback": False,
+                    "injection_blocked": False,
+                    "retrieved_sources": sources
+                }
+
+            _is_policies_list = ("all policies" in q_lower) or ("all" in q_lower and "polic" in q_lower)
+            if _is_policies_list:
+                reply = _synthesize_policies()
+                return {
+                    "reply": reply,
+                    "tool_called": False,
+                    "availability": None,
+                    "used_fallback": False,
+                    "injection_blocked": False,
+                    "retrieved_sources": sources
+                }
+
+            # Highlights / benefits / "what's special" -> concise FAQ answer,
+            # NOT the full 18-chunk overview. Retrieval scores 0 for "special"
+            # (no literal match), so answer it explicitly here.
+            if any(w in q_lower for w in ("benefit", "highlight", "special", "what makes")):
+                _hl = next(
+                    (c for c in kb.chunks if c.get("topic") == "highlights"),
+                    None,
+                )
+                if _hl is not None:
+                    _title = _hl.get("title", "Resort highlights").replace("FAQ: ", "").strip()
+                    _answer = _hl.get("content", "")
+                    if ": " in _answer:
+                        _answer = _answer.split(": ", 1)[1].strip()
+                    return {
+                        "reply": f"**{_title}:** {_answer}",
+                        "tool_called": False,
+                        "availability": None,
+                        "used_fallback": False,
+                        "injection_blocked": False,
+                        "retrieved_sources": [_hl.get("title", "")],
+                    }
+
+            # Full overview — ONLY for open-ended resort questions.
+            # "benefits / highlights / special" intentionally NOT here:
+            # those have a dedicated concise FAQ chunk and must fall through
+            # to specific synthesis below instead of dumping all 18 chunks.
+            _EXPLICIT_BROAD_PHRASES = (
+                "everything", "all about", "what all", "overview",
+            )
+            _has_explicit_broad = any(p in q_lower for p in _EXPLICIT_BROAD_PHRASES)
+            _mentions_place = any(
+                w in q_lower for w in ("resort", "hotel", "property", "grand azure", "stay here", "this place")
+            )
+            _about_place = ("about" in q_lower and _mentions_place)
+            _tell_about_place = (
+                (("tell me" in q_lower) or ("describe" in q_lower)) and (_mentions_place or "about" in q_lower)
+            )
+            is_broad_query = _has_explicit_broad or _about_place or _tell_about_place
 
             if is_broad_query:
                 reply = _synthesize_broad_answer(retrieved)
@@ -495,24 +614,54 @@ class AssistantOrchestrator:
                     t = chunk.get("topic") or chunk.get("id")
                     topic_groups.setdefault(t, []).append(chunk)
 
+                # Deduplicate property overview chunk if specific topic chunks are present
+                if len(topic_groups) > 1 and "property" in topic_groups:
+                    prop_keywords = ["about", "resort", "hotel", "contact", "address", "phone", "email", "location", "where"]
+                    if not any(k in q_lower for k in prop_keywords):
+                        del topic_groups["property"]
+
+                # Deduplicate checkin/checkout policy if separate checkin or checkout topics are present
+                if ("checkin" in topic_groups or "checkout" in topic_groups) and "checkincheckout" in topic_groups:
+                    del topic_groups["checkincheckout"]
+
                 answers = []
                 selected_sources = []
 
                 for topic, chunks in topic_groups.items():
-                    # For each topic, pick the single best chunk:
-                    # Prefer FAQ chunk if present for polished conversational answer; otherwise highest scoring chunk
-                    best_chunk = next((c for c in chunks if c.get("category") == "faq"), chunks[0])
+                    # Pick highest scoring chunk for this topic
+                    best_chunk = max(chunks, key=lambda c: c.get("score", 0.0))
                     content = best_chunk["content"]
                     category = best_chunk.get("category", "")
 
-                    if category == "faq" and "| Verified Answer:" in content:
-                        answers.append(content.split("| Verified Answer:")[-1].strip())
-                    elif category == "amenity":
-                        answers.append(f"Yes! {content}")
-                    elif category in ("policy", "property"):
-                        answers.append(content)
+                    if category == "amenity":
+                        if " | Timings: " in content and ". Description: " in content:
+                            name, rest = content.split(" | Timings: ", 1)
+                            timings, desc = rest.split(". Description: ", 1)
+                            answers.append(
+                                f"Yes! **{name.strip()}** (Timings: {timings.strip()}):\n{desc.strip()}"
+                            )
+                        else:
+                            answers.append(f"Yes! {content}")
+                    elif category == "policy":
+                        title = best_chunk.get("title", "").replace("Policy: ", "").strip()
+                        label = title if "policy" in title.lower() or "timings" in title.lower() else f"{title} Policy"
+                        if "Policy: " in content:
+                            _, policy_text = content.split("Policy: ", 1)
+                            answers.append(f"**{label}:** {policy_text.strip()}")
+                        else:
+                            answers.append(f"**{label}:** {content}")
+                    elif category == "faq":
+                        title = best_chunk.get("title", "").replace("FAQ: ", "").strip()
+                        if ": " in content:
+                            _, answer_text = content.split(": ", 1)
+                            answers.append(f"**{title}:** {answer_text.strip()}")
+                        else:
+                            answers.append(f"**{title}:** {content}")
                     elif category == "room":
-                        answers.append(f"For room recommendations: {content}")
+                        title = best_chunk.get("title", "").replace("Room: ", "").strip()
+                        answers.append(f"**{title}:**\n{content}")
+                    elif category == "property":
+                        answers.append(f"**The Grand Azure Heritage Resort & Spa:**\n{content}")
                     else:
                         answers.append(content)
                     selected_sources.append(best_chunk["title"])

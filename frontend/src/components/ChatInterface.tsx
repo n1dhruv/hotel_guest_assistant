@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import { flushSync } from "react-dom";
 import {
   Send,
   Bot,
@@ -34,6 +35,8 @@ interface Message {
   injection_blocked?: boolean;
   used_fallback?: boolean;
   retrieved_sources?: string[];
+  /** True while the message is still being streamed */
+  streaming?: boolean;
 }
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
@@ -63,6 +66,7 @@ export default function ChatInterface() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -89,42 +93,124 @@ export default function ChatInterface() {
     setMessages(newHistory);
     setIsLoading(true);
 
+    // Placeholder streaming message
+    const assistantMsgId = `assistant-${Date.now()}`;
+    // Plain variable to accumulate content — lives entirely within this async call
+    let streamingContent = "";
+
+    flushSync(() => {
+      setMessages((prev) => [
+        ...prev,
+        { id: assistantMsgId, role: "assistant", content: "", streaming: true } as Message
+      ]);
+    });
+
+    // Abort any previous in-flight request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
-      const response = await fetch(`${BACKEND_URL}/api/chat`, {
+      const response = await fetch(`${BACKEND_URL}/api/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: newHistory.map((m) => ({ role: m.role, content: m.content }))
-        })
+        }),
+        signal: controller.signal
       });
 
       if (!response.ok) {
         throw new Error(`Server returned ${response.status}: ${response.statusText}`);
       }
 
-      const data = await response.json();
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No response body");
 
-      const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
-        role: "assistant",
-        content: data.reply,
-        availability: data.availability,
-        needs_dates: data.needs_dates,
-        injection_blocked: data.injection_blocked,
-        used_fallback: data.used_fallback,
-        retrieved_sources: data.retrieved_sources
-      };
+      const decoder = new TextDecoder();
+      let buffer = "";
 
-      setMessages((prev) => [...prev, assistantMessage]);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      if (data.needs_dates) {
-        setShowDatePicker(true);
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSE lines are separated by \n; incomplete trailing line stays in buffer
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6).trim();
+          if (raw === "[DONE]") break;
+
+          let parsed: Record<string, unknown>;
+          try {
+            parsed = JSON.parse(raw);
+          } catch {
+            continue; // skip malformed SSE lines
+          }
+
+          if (parsed.type === "token") {
+            // Accumulate in local var first so we always have the latest full text
+            streamingContent += parsed.token as string;
+            // flushSync breaks React 18 automatic batching → each token paints immediately
+            flushSync(() => {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId
+                    ? { ...m, content: streamingContent }
+                    : m
+                )
+              );
+            });
+          } else if (parsed.type === "metadata") {
+            flushSync(() => {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId
+                    ? {
+                        ...m,
+                        streaming: false,
+                        availability: parsed.availability as Message["availability"],
+                        needs_dates: parsed.needs_dates as boolean,
+                        injection_blocked: parsed.injection_blocked as boolean,
+                        used_fallback: parsed.used_fallback as boolean,
+                        retrieved_sources: parsed.retrieved_sources as string[]
+                      }
+                    : m
+                )
+              );
+            });
+
+            if (parsed.needs_dates) {
+              setShowDatePicker(true);
+            }
+          } else if (parsed.type === "error") {
+            throw new Error(parsed.message as string);
+          }
+        }
       }
     } catch (err: unknown) {
-      console.error("Chat error:", err);
-      setErrorMessage("Could not connect to resort assistant backend. Please ensure the server is running on port 8000.");
+      if (err instanceof Error && err.name === "AbortError") {
+        // User aborted — clean up placeholder
+        setMessages((prev) => prev.filter((m) => m.id !== assistantMsgId));
+      } else {
+        console.error("Chat error:", err);
+        // Remove placeholder and show error
+        setMessages((prev) => prev.filter((m) => m.id !== assistantMsgId));
+        setErrorMessage(
+          "Could not connect to resort assistant backend. Please ensure the server is running on port 8000."
+        );
+      }
     } finally {
-
+      // Ensure streaming flag is cleared even if metadata event was missed
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantMsgId ? { ...m, streaming: false } : m))
+      );
       setIsLoading(false);
     }
   };
@@ -135,6 +221,7 @@ export default function ChatInterface() {
   };
 
   const handleResetChat = () => {
+    if (abortControllerRef.current) abortControllerRef.current.abort();
     setMessages([INITIAL_MESSAGE]);
     setShowDatePicker(false);
     setErrorMessage(null);
@@ -296,6 +383,10 @@ export default function ChatInterface() {
 
                   <FormattedMessage content={m.content} isUser={isUser} />
 
+                  {/* Streaming cursor */}
+                  {m.streaming && (
+                    <span className="inline-block w-2 h-4 bg-yellow-400 animate-pulse ml-0.5 align-middle" />
+                  )}
 
                   {/* Structured Availability Cards */}
                   {m.availability && <AvailabilityCard data={m.availability} />}
@@ -308,7 +399,7 @@ export default function ChatInterface() {
                   )}
 
                   {/* Verified Sources Badge */}
-                  {m.retrieved_sources && m.retrieved_sources.length > 0 && !isUser && (
+                  {m.retrieved_sources && m.retrieved_sources.length > 0 && !isUser && !m.streaming && (
                     <div className="mt-3 pt-2.5 border-t border-[#1e1e1e] flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-zinc-400">
                       <Compass className="w-3 h-3 text-yellow-400" />
                       <span className="text-zinc-500 uppercase">Knowledge Base:</span>
@@ -327,21 +418,6 @@ export default function ChatInterface() {
             </div>
           );
         })}
-
-        {/* Loading Indicator */}
-        {isLoading && (
-          <div className="flex gap-3 max-w-[85%] mr-auto items-center">
-            <div className="w-7 h-7 bg-[#141414] text-yellow-400 border border-[#262626] flex items-center justify-center shrink-0">
-              <Bot className="w-3.5 h-3.5" />
-            </div>
-            <div className="p-3 bg-[#0c0c0c] border border-[#222222] flex items-center gap-2">
-              <span className="text-xs font-mono text-zinc-400 mr-1">Querying resort knowledge</span>
-              <span className="w-1.5 h-1.5 bg-yellow-400 animate-pulse"></span>
-              <span className="w-1.5 h-1.5 bg-yellow-400 animate-pulse [animation-delay:0.2s]"></span>
-              <span className="w-1.5 h-1.5 bg-yellow-400 animate-pulse [animation-delay:0.4s]"></span>
-            </div>
-          </div>
-        )}
 
         {/* Error Notification */}
         {errorMessage && (
@@ -421,5 +497,3 @@ export default function ChatInterface() {
     </div>
   );
 }
-
-

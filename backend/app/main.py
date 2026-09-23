@@ -149,6 +149,55 @@ async def execute_hybrid_search(req: HybridSearchRequest):
         "stats": retriever.get_stats(),
     }
 
+class RerankRequest(BaseModel):
+    query: str = Field(..., description="Query to score candidates against")
+    top_n: int = Field(3, description="Number of top reranked chunks to return (default: 3)")
+    candidates: Optional[List[Dict[str, Any]]] = Field(
+        None, description="Optional candidate chunks to rerank. If omitted, Top 10 hybrid search runs first."
+    )
+    use_hyde: bool = Field(True, description="Whether to use HyDE in initial candidate retrieval if candidates not provided")
+    category: Optional[str] = Field(None, description="Optional category filter if candidates not provided")
+
+@app.get("/api/rerank/stats")
+def get_rerank_stats():
+    """Returns Reranker (NVIDIA Llama Nemotron Rerank VL 1B V2) operational statistics."""
+    from app.core.reranker import get_reranker
+    reranker = get_reranker()
+    return reranker.get_stats()
+
+@app.post("/api/rerank")
+async def execute_rerank(req: RerankRequest):
+    """
+    Executes cross-encoder reranking using NVIDIA Llama Nemotron Rerank VL 1B V2.
+    If candidates are not provided, automatically retrieves Top 10 candidates via Hybrid Search first.
+    """
+    from app.core.reranker import get_reranker
+    reranker = get_reranker()
+
+    candidates = req.candidates
+    if candidates is None:
+        from app.core.hybrid_retriever import get_hybrid_retriever
+        retriever = get_hybrid_retriever()
+        candidates = await retriever.aretrieve_candidates(
+            query=req.query,
+            top_k=10,
+            use_hyde=req.use_hyde,
+            category_filter=req.category,
+        )
+
+    reranked = await reranker.arerank(
+        query=req.query,
+        candidates=candidates,
+        top_n=req.top_n,
+    )
+    return {
+        "query": req.query,
+        "initial_candidates_count": len(candidates),
+        "count": len(reranked),
+        "results": reranked,
+        "stats": reranker.get_stats(),
+    }
+
 def start():
     """Entrypoint to launch uvicorn directly via 'uv run backend' or Render."""
     import os

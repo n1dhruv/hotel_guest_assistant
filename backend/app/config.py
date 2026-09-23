@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     HYBRID_DENSE_CANDIDATES: int = 10
     HYBRID_BM25_CANDIDATES: int = 10
 
+    # Reranker Pipeline: NVIDIA Llama Nemotron Rerank VL 1B V2 via OpenRouter (Top 10 -> Top 3-5)
+    RERANKER_ENABLED: bool = True
+    RERANKER_PROVIDER: str = "openrouter"
+    RERANKER_MODEL: str = "nvidia/llama-nemotron-rerank-vl-1b-v2:free"
+    RERANKER_TOP_N: int = 3
+    RERANKER_TIMEOUT: float = 6.0
+
     MOCK_LLM: bool = False
     HOTEL_DATA_PATH: Path = BASE_DIR / "app" / "data" / "hotel_data.json"
     CORS_ORIGINS: list[str] | str = [

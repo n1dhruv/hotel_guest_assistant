@@ -3,7 +3,7 @@ import math
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional
 import numpy as np
 
 from app.config import settings
@@ -194,6 +194,34 @@ class HotelKnowledgeBase:
         from app.core.hybrid_retriever import get_hybrid_retriever
         retriever = get_hybrid_retriever()
         return retriever.retrieve_candidates(query, top_k=k, use_hyde=use_hyde)
+
+    def retrieve_reranked(
+        self,
+        query: str,
+        top_n: int = 3,
+        candidate_k: int = 10,
+        use_hyde: bool = True,
+        category_filter: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Two-stage retrieval pipeline:
+        Stage 1: Dual-channel Hybrid Search (Qdrant + BM25 + RRF) extracts candidate_k (10) chunks.
+        Stage 2: Cross-encoder reranker (NVIDIA Llama Nemotron Rerank VL 1B V2) re-scores
+                 joint query-document relevance and returns top_n (3) refined chunks.
+        """
+        from app.core.hybrid_retriever import get_hybrid_retriever
+        from app.core.reranker import get_reranker
+
+        hybrid_retriever = get_hybrid_retriever()
+        candidates = hybrid_retriever.retrieve_candidates(
+            query=query,
+            top_k=candidate_k,
+            use_hyde=use_hyde,
+            category_filter=category_filter,
+        )
+
+        reranker = get_reranker()
+        return reranker.rerank(query=query, candidates=candidates, top_n=top_n)
 
 # Singleton knowledge base instance
 kb = HotelKnowledgeBase()

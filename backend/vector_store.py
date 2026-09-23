@@ -26,7 +26,9 @@ from app.core.vector_store import (
     FastEmbedAdapter,
     GeminiEmbeddingAdapter,
     LiteLLMGeminiEmbeddingAdapter,
+    NemotronEmbeddingAdapter,
     OpenAIEmbeddingAdapter,
+    OpenRouterNemotronEmbeddingAdapter,
     QdrantVectorStore,
     chunk_id_to_uuid,
     get_embedder,
@@ -39,6 +41,8 @@ __all__ = [
     "get_embedder",
     "BaseEmbedder",
     "FastEmbedAdapter",
+    "OpenRouterNemotronEmbeddingAdapter",
+    "NemotronEmbeddingAdapter",
     "GeminiEmbeddingAdapter",
     "LiteLLMGeminiEmbeddingAdapter",
     "OpenAIEmbeddingAdapter",
@@ -53,7 +57,7 @@ def main():
     parser.add_argument("--query", "-q", type=str, default="", help="Query to search against vector store")
     parser.add_argument("--top-k", "-k", type=int, default=4, help="Number of results to retrieve (default: 4)")
     parser.add_argument("--category", "-c", type=str, default=None, help="Filter by category (property, amenity, room, policy, faq)")
-    parser.add_argument("--provider", "-p", type=str, default="auto", help="Embedding provider (auto, gemini, openai, fastembed, deterministic)")
+    parser.add_argument("--provider", "-p", type=str, default="auto", help="Embedding provider (auto, openrouter, nemotron, openai, fastembed, deterministic)")
     parser.add_argument("--in-memory", action="store_true", help="Run with ephemeral in-memory storage (:memory:)")
     parser.add_argument("--stats", action="store_true", help="Display vector store and collection statistics")
     parser.add_argument("--hyde", action="store_true", help="Use HyDE (Hypothetical Document Embeddings) for query expansion")

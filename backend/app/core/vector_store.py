@@ -214,6 +214,8 @@ class OpenRouterNemotronEmbeddingAdapter(BaseEmbedder):
 
 # Alias
 NemotronEmbeddingAdapter = OpenRouterNemotronEmbeddingAdapter
+LiteLLMGeminiEmbeddingAdapter = OpenRouterNemotronEmbeddingAdapter
+GeminiEmbeddingAdapter = OpenRouterNemotronEmbeddingAdapter
 
 
 class OpenAIEmbeddingAdapter(BaseEmbedder):

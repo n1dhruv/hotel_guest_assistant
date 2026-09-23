@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from typing import Any, Dict, List, Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -115,6 +116,37 @@ async def generate_hyde_passage(req: HyDEGenerateRequest):
         "hypothetical_passage": passage,
         "is_fallback": passage.strip() == req.query.strip(),
         "stats": generator.get_stats()
+    }
+
+class HybridSearchRequest(BaseModel):
+    query: str = Field(..., description="Query to search against hybrid retriever")
+    top_k: int = Field(10, description="Number of fused candidate chunks to retrieve")
+    use_hyde: bool = Field(True, description="Whether to use HyDE query expansion for dense channel")
+    category: Optional[str] = Field(None, description="Optional category filter")
+
+@app.get("/api/hybrid-search/stats")
+def get_hybrid_search_stats():
+    """Returns Hybrid Retriever configuration and index statistics."""
+    from app.core.hybrid_retriever import get_hybrid_retriever
+    retriever = get_hybrid_retriever()
+    return retriever.get_stats()
+
+@app.post("/api/hybrid-search")
+async def execute_hybrid_search(req: HybridSearchRequest):
+    """Executes dual-channel hybrid search (Vector + BM25 + RRF) and returns Top candidate chunks."""
+    from app.core.hybrid_retriever import get_hybrid_retriever
+    retriever = get_hybrid_retriever()
+    candidates = await retriever.aretrieve_candidates(
+        query=req.query,
+        top_k=req.top_k,
+        use_hyde=req.use_hyde,
+        category_filter=req.category,
+    )
+    return {
+        "query": req.query,
+        "count": len(candidates),
+        "candidates": candidates,
+        "stats": retriever.get_stats(),
     }
 
 def start():

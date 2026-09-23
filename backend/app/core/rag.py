@@ -146,12 +146,23 @@ class HotelKnowledgeBase:
                 s += idf * (tf / (tf + 1.2)) * boost
         return s
 
-    def retrieve(self, query: str, k: int = 4, use_hyde: bool = False) -> list[dict[str, Any]]:
+    def retrieve(self, query: str, k: int = 4, use_hyde: bool = False, use_hybrid: bool = False) -> list[dict[str, Any]]:
         """
-        Retrieves top-k relevant knowledge chunks using dense embeddings (optionally with HyDE) or BM25.
+        Retrieves top-k relevant knowledge chunks using hybrid search, dense embeddings, or BM25.
         """
         if not query or not query.strip():
             return self.chunks[:k]
+
+        # 0. Dual-channel Hybrid Search if requested
+        if use_hybrid:
+            try:
+                from app.core.hybrid_retriever import get_hybrid_retriever
+                retriever = get_hybrid_retriever()
+                results = retriever.retrieve_candidates(query, top_k=k, use_hyde=use_hyde)
+                if results and len(results) >= 1:
+                    return results
+            except Exception as e:
+                print(f"[RAG] Hybrid retrieval notice ({e}), falling back to direct channels.")
 
         # 1. Use Qdrant Vector Store dense retrieval if available
         if self.vector_store is not None:
@@ -177,6 +188,12 @@ class HotelKnowledgeBase:
 
         scored_chunks.sort(key=lambda x: x[0], reverse=True)
         return [item[1] for item in scored_chunks[:k]]
+
+    def retrieve_hybrid(self, query: str, k: int = 10, use_hyde: bool = True) -> list[dict[str, Any]]:
+        """Retrieves top-k candidates using dual-channel Hybrid Search (Qdrant + BM25 + RRF)."""
+        from app.core.hybrid_retriever import get_hybrid_retriever
+        retriever = get_hybrid_retriever()
+        return retriever.retrieve_candidates(query, top_k=k, use_hyde=use_hyde)
 
 # Singleton knowledge base instance
 kb = HotelKnowledgeBase()

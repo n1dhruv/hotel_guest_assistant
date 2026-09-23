@@ -26,9 +26,9 @@ from app.core.vector_store import (
     BaseEmbedder,
     DeterministicLocalEmbedder,
     FastEmbedAdapter,
-    GeminiEmbeddingAdapter,
-    LiteLLMGeminiEmbeddingAdapter,
+    NemotronEmbeddingAdapter,
     OpenAIEmbeddingAdapter,
+    OpenRouterNemotronEmbeddingAdapter,
     QdrantVectorStore,
     chunk_id_to_uuid,
     get_embedder,
@@ -93,38 +93,39 @@ def test_fastembed_adapter():
         pytest.skip(f"FastEmbed model download skipped in this test environment: {e}")
 
 
-def test_gemini_adapter_mocked():
-    """Verify LiteLLM gemini-embedding-2 adapter request formatting, 3072 dim, and no fallback."""
+def test_nemotron_adapter_mocked():
+    """Verify OpenRouter Nemotron adapter request formatting, 2048 dim, and no fallback."""
     mock_data = [
-        {"embedding": [0.01] * 3072},
-        {"embedding": [0.02] * 3072}
+        {"embedding": [0.01] * 2048},
+        {"embedding": [0.02] * 2048}
     ]
     mock_response = MagicMock()
     mock_response.data = mock_data
 
     with patch("litellm.embedding", return_value=mock_response) as mock_embed:
-        adapter = LiteLLMGeminiEmbeddingAdapter(api_key="test-gemini-key")
-        assert adapter.dimension == 3072
-        assert "litellm" in adapter.provider_name
-        assert "gemini-embedding-2" in adapter.provider_name
+        adapter = OpenRouterNemotronEmbeddingAdapter(api_key="test-openrouter-key")
+        assert adapter.dimension == 2048
+        assert "openrouter" in adapter.provider_name
+        assert "nemotron-3-embed-1b" in adapter.provider_name
 
         vectors = adapter.embed_documents(["Text one", "Text two"])
         assert len(vectors) == 2
-        assert len(vectors[0]) == 3072
+        assert len(vectors[0]) == 2048
         assert mock_embed.called
 
         # Verify exact model passed to LiteLLM
         call_kwargs = mock_embed.call_args[1]
-        assert call_kwargs["model"] == "gemini/gemini-embedding-2"
+        assert call_kwargs["model"] == "openrouter/nvidia/nemotron-3-embed-1b:free"
+        assert call_kwargs["api_key"] == "test-openrouter-key"
 
 
-def test_gemini_strict_no_fallback_on_error():
-    """Verify that LiteLLM gemini-embedding-2 strictly raises errors and NEVER falls back."""
-    with patch("litellm.embedding", side_effect=RuntimeError("LiteLLM connection error")):
-        adapter = LiteLLMGeminiEmbeddingAdapter(api_key="test-gemini-key", max_retries=1)
+def test_nemotron_strict_no_fallback_on_error():
+    """Verify that OpenRouter Nemotron strictly raises errors and NEVER falls back."""
+    with patch("litellm.embedding", side_effect=RuntimeError("LiteLLM OpenRouter error")):
+        adapter = OpenRouterNemotronEmbeddingAdapter(api_key="test-openrouter-key", max_retries=1)
         with pytest.raises(RuntimeError) as exc_info:
             adapter.embed_query("Query that fails")
-        assert "LiteLLM connection error" in str(exc_info.value)
+        assert "LiteLLM OpenRouter error" in str(exc_info.value)
 
 
 def test_openai_adapter_mocked():
@@ -148,10 +149,21 @@ def test_get_embedder_factory():
     det = get_embedder("deterministic")
     assert isinstance(det, DeterministicLocalEmbedder)
 
-    # Auto resolution returns a valid BaseEmbedder
-    auto_embedder = get_embedder("auto")
-    assert isinstance(auto_embedder, BaseEmbedder)
-    assert auto_embedder.dimension > 0
+    # Missing API key strictly raises ValueError (no dimension-skewing fallback)
+    with patch.object(settings, "OPENROUTER_API_KEY", ""):
+        with pytest.raises(ValueError) as exc_info:
+            get_embedder("openrouter")
+        assert "OPENROUTER_API_KEY is required" in str(exc_info.value)
+
+    # With API key, resolves to OpenRouterNemotronEmbeddingAdapter
+    with patch.object(settings, "OPENROUTER_API_KEY", "mock-openrouter-key"):
+        adapter = get_embedder("openrouter")
+        assert isinstance(adapter, OpenRouterNemotronEmbeddingAdapter)
+        assert adapter.dimension == 2048
+
+        auto_adapter = get_embedder("auto")
+        assert isinstance(auto_adapter, OpenRouterNemotronEmbeddingAdapter)
+        assert auto_adapter.dimension == 2048
 
 
 # =====================================================================
@@ -436,14 +448,22 @@ def test_upsert_langchain_documents():
 
 def test_vector_store_stats_api_endpoint():
     """Verify GET /api/vector-store/stats returns ready status and valid schema."""
-    with TestClient(app) as client:
-        res = client.get("/api/vector-store/stats")
-        assert res.status_code == 200
-        data = res.json()
-        assert "collection_name" in data
-        assert "point_count" in data
-        assert "vector_dimension" in data
-        assert "embedding_provider" in data
-        assert "status" in data
-        assert data["point_count"] >= 29
-        assert data["status"] == "ready"
+    mock_store = MagicMock()
+    mock_store.collection_name = "hotel_knowledge_base"
+    mock_store.get_point_count.return_value = 29
+    mock_store.embedder.dimension = 2048
+    mock_store.embedder.provider_name = "openrouter (openrouter/nvidia/nemotron-3-embed-1b:free, 2048d)"
+    mock_store.storage_mode = "local disk"
+
+    with patch("app.core.vector_store.get_vector_store", return_value=mock_store):
+        with TestClient(app) as client:
+            res = client.get("/api/vector-store/stats")
+            assert res.status_code == 200
+            data = res.json()
+            assert "collection_name" in data
+            assert "point_count" in data
+            assert "vector_dimension" in data
+            assert "embedding_provider" in data
+            assert "status" in data
+            assert data["point_count"] >= 29
+            assert data["status"] == "ready"

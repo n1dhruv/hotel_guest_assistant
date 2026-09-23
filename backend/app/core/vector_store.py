@@ -8,8 +8,8 @@ Supports dual-mode deployment:
    QDRANT_URL and QDRANT_API_KEY.
 
 Embedding Providers:
+- OpenRouter Nemotron (nvidia/nemotron-3-embed-1b:free, 2048 dim): Free tier via OpenRouter & LiteLLM.
 - FastEmbed (BAAI/bge-small-en-v1.5, 384 dim): 100% free CPU-based local embeddings.
-- Google Gemini (models/gemini-embedding-001, 768 dim): Free tier via Google AI Studio.
 - OpenAI (text-embedding-3-small, 1536 dim): Supported when OPENAI_API_KEY is configured.
 - DeterministicLocalEmbedder (384 dim): Normalized token hashing for offline tests.
 """
@@ -112,26 +112,26 @@ class FastEmbedAdapter(BaseEmbedder):
         return next(self._model.embed([text])).tolist()
 
 
-class LiteLLMGeminiEmbeddingAdapter(BaseEmbedder):
+class OpenRouterNemotronEmbeddingAdapter(BaseEmbedder):
     """
-    Google Gemini embeddings adapter powered strictly by LiteLLM (gemini/gemini-embedding-2).
-    Produces 3072-dimensional embeddings. Strictly disallows fallback to avoid dimension mismatch.
+    NVIDIA Nemotron-3-Embed-1B embedding adapter via OpenRouter and LiteLLM.
+    Generates 2048-dimensional embeddings. Strictly disallows fallback to avoid dimension mismatch.
     """
 
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model_name: str = "gemini/gemini-embedding-2",
-        dimension: int = 3072,
+        model_name: str = "openrouter/nvidia/nemotron-3-embed-1b:free",
+        dimension: int = 2048,
         max_retries: int = 4
     ):
-        self.api_key = api_key or settings.GEMINI_API_KEY
+        self.api_key = api_key or getattr(settings, "OPENROUTER_API_KEY", "")
         if not self.api_key:
             raise ValueError(
-                "GEMINI_API_KEY must be provided for LiteLLMGeminiEmbeddingAdapter. "
+                "OPENROUTER_API_KEY must be provided for OpenRouter Nemotron embedding. "
                 "No fallback is allowed to prevent vector dimension mismatch in Qdrant."
             )
-        self.model_name = model_name if model_name.startswith("gemini/") else f"gemini/{model_name}"
+        self.model_name = model_name if model_name.startswith("openrouter/") else f"openrouter/{model_name}"
         self._dim = dimension
         self.max_retries = max_retries
 
@@ -141,7 +141,7 @@ class LiteLLMGeminiEmbeddingAdapter(BaseEmbedder):
 
     @property
     def provider_name(self) -> str:
-        return f"litellm ({self.model_name}, {self._dim}d)"
+        return f"openrouter ({self.model_name}, {self._dim}d)"
 
     def embed_documents(self, texts: Sequence[str]) -> List[List[float]]:
         import time
@@ -152,7 +152,7 @@ class LiteLLMGeminiEmbeddingAdapter(BaseEmbedder):
 
         text_list = list(texts)
         all_embeddings: List[List[float]] = []
-        batch_size = 5
+        batch_size = 10
 
         for i in range(0, len(text_list), batch_size):
             batch = text_list[i : i + batch_size]
@@ -171,16 +171,16 @@ class LiteLLMGeminiEmbeddingAdapter(BaseEmbedder):
                     if is_rate_limit and attempt < self.max_retries - 1:
                         wait = 2 ** (attempt + 1)
                         logger.warning(
-                            f"LiteLLM rate limit encountered on batch for {self.model_name}. Retrying in {wait}s..."
+                            f"OpenRouter rate limit on batch for {self.model_name}. Retrying in {wait}s..."
                         )
                         time.sleep(wait)
                     else:
-                        logger.error(f"LiteLLM gemini-embedding-2 error on batch: {e}")
+                        logger.error(f"OpenRouter Nemotron embedding error on batch: {e}")
                         raise e
 
             # Micro-pause between batches to respect rate limits
             if i + batch_size < len(text_list):
-                time.sleep(0.3)
+                time.sleep(0.2)
 
         return all_embeddings
 
@@ -202,18 +202,18 @@ class LiteLLMGeminiEmbeddingAdapter(BaseEmbedder):
                 if is_rate_limit and attempt < self.max_retries - 1:
                     wait = 2 ** (attempt + 1)
                     logger.warning(
-                        f"LiteLLM rate limit encountered on query for {self.model_name}. Retrying in {wait}s..."
+                        f"OpenRouter rate limit on query for {self.model_name}. Retrying in {wait}s..."
                     )
                     time.sleep(wait)
                 else:
-                    logger.error(f"LiteLLM gemini-embedding-2 query error: {e}")
+                    logger.error(f"OpenRouter Nemotron query embedding error: {e}")
                     raise e
 
         raise RuntimeError(f"Exceeded max retries embedding query with {self.model_name}")
 
 
-# Alias for backward compatibility
-GeminiEmbeddingAdapter = LiteLLMGeminiEmbeddingAdapter
+# Alias
+NemotronEmbeddingAdapter = OpenRouterNemotronEmbeddingAdapter
 
 
 class OpenAIEmbeddingAdapter(BaseEmbedder):
@@ -307,24 +307,28 @@ class DeterministicLocalEmbedder(BaseEmbedder):
 def get_embedder(provider: Optional[str] = None) -> BaseEmbedder:
     """
     Factory to retrieve an embedding adapter.
-    Uses LiteLLMGeminiEmbeddingAdapter (gemini/gemini-embedding-2, 3072 dim) strictly.
+    Uses OpenRouterNemotronEmbeddingAdapter (openrouter/nvidia/nemotron-3-embed-1b:free, 2048 dim) strictly.
     NO fallback to other providers/models is permitted to prevent Qdrant vector
     dimension mismatch and collection corruption.
     """
-    req_provider = (provider or getattr(settings, "EMBEDDING_PROVIDER", "gemini")).lower().strip()
+    req_provider = (provider or getattr(settings, "EMBEDDING_PROVIDER", "openrouter")).lower().strip()
 
-    if req_provider in ("gemini", "gemini-embedding-2", "auto"):
-        api_key = settings.GEMINI_API_KEY
+    if (
+        req_provider in ("openrouter", "nemotron", "nvidia", "auto")
+        or req_provider.startswith("openrouter/")
+        or "nemotron" in req_provider
+    ):
+        api_key = settings.OPENROUTER_API_KEY
         if not api_key:
             raise ValueError(
-                "GEMINI_API_KEY is required for LiteLLM gemini-embedding-2. "
-                "Fallback is disabled to avoid vector dimension mismatch."
+                "OPENROUTER_API_KEY is required for OpenRouter Nemotron embedding. "
+                "Fallback is disabled to avoid vector dimension mismatch in Qdrant."
             )
-        model_name = getattr(settings, "EMBEDDING_MODEL", "gemini/gemini-embedding-2")
-        return LiteLLMGeminiEmbeddingAdapter(
+        model_name = getattr(settings, "EMBEDDING_MODEL", "openrouter/nvidia/nemotron-3-embed-1b:free")
+        return OpenRouterNemotronEmbeddingAdapter(
             api_key=api_key,
             model_name=model_name,
-            dimension=getattr(settings, "EMBEDDING_DIMENSION", 3072)
+            dimension=getattr(settings, "EMBEDDING_DIMENSION", 2048)
         )
 
     if req_provider in ("deterministic", "mock", "local"):

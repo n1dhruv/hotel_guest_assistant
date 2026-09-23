@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Send,
   Bot,
@@ -82,6 +82,7 @@ export default function ChatInterface() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showBootNote, setShowBootNote] = useState(true);
 
   // Hotel Data JSON Modal state
   const [showJsonModal, setShowJsonModal] = useState(false);
@@ -90,66 +91,9 @@ export default function ChatInterface() {
   const [copiedJson, setCopiedJson] = useState(false);
   const [activeJsonTab, setActiveJsonTab] = useState<"all" | "property" | "amenities" | "rooms" | "policies" | "faqs">("all");
 
-  // Backend wake-up gate: Render free tier sleeps after ~15 min idle.
-  // Nothing can be sent until the backend answers a health ping.
-  const [backendStatus, setBackendStatus] = useState<"waking" | "online">("waking");
-  const [wakeAttempts, setWakeAttempts] = useState(0);
-
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const typewriterRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const wakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const statusRef = useRef<"waking" | "online">("waking");
-  const mountedRef = useRef(true);
-
-  const setStatus = (s: "waking" | "online") => {
-    statusRef.current = s;
-    if (mountedRef.current) setBackendStatus(s);
-  };
-
-  const isOnline = useCallback(() => statusRef.current === "online", []);
-
-  const wakeBackend = useCallback(async () => {
-    if (isOnline()) return;
-    if (mountedRef.current) setWakeAttempts((a) => a + 1);
-    try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 25000);
-      let ok = false;
-      try {
-        const res = await fetch(`${BACKEND_URL}/health`, {
-          signal: ctrl.signal,
-          cache: "no-store"
-        });
-        ok = res.ok;
-      } finally {
-        clearTimeout(t);
-      }
-      if (ok) {
-        if (wakeTimerRef.current) clearTimeout(wakeTimerRef.current);
-        setStatus("online");
-        return;
-      }
-    } catch {
-      // Backend still asleep or unreachable — retry below
-    }
-    if (!isOnline() && mountedRef.current) {
-      wakeTimerRef.current = setTimeout(() => {
-        void wakeBackend();
-      }, 5000);
-    }
-  }, [isOnline]);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    void wakeBackend();
-    return () => {
-      mountedRef.current = false;
-      if (wakeTimerRef.current) clearTimeout(wakeTimerRef.current);
-    };
-  }, [wakeBackend]);
-
-  const chatReady = backendStatus === "online";
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -161,7 +105,7 @@ export default function ChatInterface() {
 
   const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend || input).trim();
-    if (!text || isLoading || statusRef.current !== "online") return;
+    if (!text || isLoading) return;
 
     setInput("");
     setErrorMessage(null);
@@ -296,17 +240,9 @@ export default function ChatInterface() {
       } else {
         console.error("Chat error:", err);
         setMessages((prev) => prev.filter((m) => m.id !== assistantMsgId));
-        if (err instanceof TypeError) {
-          // Network-level failure: backend likely went back to sleep — re-enter wake gate
-          setStatus("waking");
-          setWakeAttempts(0);
-          void wakeBackend();
-          setErrorMessage(null);
-        } else {
-          setErrorMessage(
-            "Could not connect to resort assistant backend. Please ensure the server is running on port 8000."
-          );
-        }
+        setErrorMessage(
+          "Could not connect to resort assistant backend. Please ensure the server is running on port 8000."
+        );
       }
     } finally {
       setMessages((prev) =>
@@ -433,51 +369,28 @@ export default function ChatInterface() {
             <span className="hidden lg:inline">Reset</span>
           </button>
 
-          {/* Live Status Indicator — OFFLINE until the backend answers a health ping */}
-          {chatReady ? (
-            <div className="hidden sm:flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 bg-[#111111] border border-[#262626] text-yellow-400 text-[10px] sm:text-[11px] font-mono">
-              <span className="w-1.5 h-1.5 bg-yellow-400 animate-pulse"></span>
-              <span>ONLINE</span>
-            </div>
-          ) : (
-            <div className="hidden sm:flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 bg-[#1c1114] border border-red-500/50 text-red-300 text-[10px] sm:text-[11px] font-mono">
-              <span className="w-1.5 h-1.5 bg-red-400 animate-pulse"></span>
-              <span>OFFLINE</span>
-            </div>
-          )}
+          {/* Live Status Indicator */}
+          <div className="hidden sm:flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 bg-[#111111] border border-[#262626] text-yellow-400 text-[10px] sm:text-[11px] font-mono">
+            <span className="w-1.5 h-1.5 bg-yellow-400 animate-pulse"></span>
+            <span>ONLINE</span>
+          </div>
         </div>
       </div>
 
-      {/* Backend Wake-Up Gate: blocks interaction until Render answers */}
-      {!chatReady && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-sm bg-[#0c0c0c] border border-[#262626] p-5 sm:p-6 text-center shadow-2xl">
-            <div className="flex items-center justify-center gap-1.5 mb-4">
-              <span className="w-2 h-2 bg-red-400 rounded-full animate-bounce [animation-delay:0ms]" />
-              <span className="w-2 h-2 bg-red-400 rounded-full animate-bounce [animation-delay:150ms]" />
-              <span className="w-2 h-2 bg-red-400 rounded-full animate-bounce [animation-delay:300ms]" />
-            </div>
-            <h3 className="font-mono text-sm font-bold tracking-wider uppercase text-white mb-2">
-              Backend is waking up
-            </h3>
-            <p className="font-mono text-[11px] sm:text-xs leading-relaxed text-zinc-400 mb-1">
-              Please wait until the backend is getting active.
-            </p>
-            <p className="font-mono text-[10px] sm:text-[11px] leading-relaxed text-zinc-600 mb-4">
-              The free server sleeps after 15 minutes of inactivity. First load takes up to a minute.
-              {wakeAttempts > 1 ? ` Retrying (attempt ${wakeAttempts})...` : ""}
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setWakeAttempts(0);
-                void wakeBackend();
-              }}
-              className="px-4 py-2 bg-yellow-400 hover:bg-yellow-300 text-black font-bold font-mono text-xs uppercase tracking-wider transition-colors cursor-pointer"
-            >
-              Retry now
-            </button>
-          </div>
+      {/* Cold-boot notice: first request waits on the free server to start */}
+      {showBootNote && (
+        <div className="px-3 sm:px-4 py-2 bg-[#141104] border-b border-yellow-400/30 flex items-center justify-between gap-2 shrink-0">
+          <p className="text-[10px] sm:text-[11px] font-mono text-yellow-200/90 leading-relaxed">
+            Note: your first message can take 2-3 minutes while the free server starts. Later replies are instant.
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowBootNote(false)}
+            className="text-zinc-500 hover:text-white p-1 shrink-0 cursor-pointer"
+            title="Dismiss"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
@@ -766,7 +679,7 @@ export default function ChatInterface() {
             <button
               key={idx}
               type="button"
-              disabled={isLoading || !chatReady}
+              disabled={isLoading}
               onClick={() => {
                 if (prompt === "Check room availability") {
                   setShowDatePicker((prev) => !prev);
@@ -794,15 +707,13 @@ export default function ChatInterface() {
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder={
-            chatReady ? "Ask a question or inquire about rooms..." : "Connecting to backend..."
-          }
-          disabled={isLoading || !chatReady}
+          placeholder="Ask a question or inquire about rooms..."
+          disabled={isLoading}
           className="flex-1 px-3 sm:px-3.5 py-2 sm:py-2.5 bg-black border border-[#282828] focus:border-yellow-400 text-white placeholder-zinc-500 text-xs sm:text-sm outline-none transition-colors font-sans"
         />
         <button
           type="submit"
-          disabled={isLoading || !chatReady || !input.trim()}
+          disabled={isLoading || !input.trim()}
           className="px-3 sm:px-4 py-2 sm:py-2.5 bg-yellow-400 hover:bg-yellow-300 disabled:bg-[#1a1a1a] text-black disabled:text-zinc-600 font-bold transition-colors cursor-pointer shrink-0 font-mono text-xs uppercase tracking-wider flex items-center gap-1.5"
         >
           <span className="hidden sm:inline">Send</span>

@@ -27,6 +27,19 @@ import AvailabilityCard, { AvailabilityData } from "./AvailabilityCard";
 import DateGuestPicker from "./DateGuestPicker";
 import FormattedMessage from "./FormattedMessage";
 
+interface SourcePill {
+  title: string;
+  category: string;
+}
+
+interface LatencyBreakdown {
+  hyde_ms?: number;
+  search_ms?: number;
+  rerank_ms?: number;
+  generation_ms?: number;
+  total_ms?: number;
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -36,7 +49,11 @@ interface Message {
   injection_blocked?: boolean;
   used_fallback?: boolean;
   retrieved_sources?: string[];
-  /** True while the typewriter animation is still running */
+  /** Detailed citation pills (title + category) from the reranked Top-N */
+  sources?: SourcePill[];
+  /** Per-stage RAG latency (HyDE / search / rerank / generation ms) */
+  latency_breakdown?: LatencyBreakdown | null;
+  /** True while tokens are still streaming */
   streaming?: boolean;
 }
 
@@ -115,67 +132,106 @@ export default function ChatInterface() {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
+    // Append streamed text to the placeholder bubble without re-render churn
+    const appendTokens = (text: string) => {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantMsgId ? { ...m, content: m.content + text } : m))
+      );
+    };
+    const finalizeMessage = (meta: Record<string, unknown>, fullReply?: string) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantMsgId
+            ? {
+                ...m,
+                ...(fullReply !== undefined ? { content: fullReply } : {}),
+                streaming: false,
+                availability: (meta.availability as AvailabilityData | null) ?? null,
+                needs_dates: (meta.needs_dates as boolean) ?? false,
+                injection_blocked: (meta.injection_blocked as boolean) ?? false,
+                used_fallback: (meta.used_fallback as boolean) ?? false,
+                retrieved_sources: (meta.retrieved_sources as string[]) ?? [],
+                sources: (meta.sources as SourcePill[]) ?? [],
+                latency_breakdown: (meta.latency_breakdown as LatencyBreakdown) ?? null
+              }
+            : m
+        )
+      );
+      if (meta.needs_dates) setShowDatePicker(true);
+    };
+
     try {
-      const response = await fetch(`${BACKEND_URL}/api/chat`, {
+      // Phase 6: real-time SSE token streaming from /api/chat/stream.
+      const response = await fetch(`${BACKEND_URL}/api/chat/stream`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
         body: JSON.stringify({
           messages: newHistory.map((m) => ({ role: m.role, content: m.content }))
         }),
         signal: controller.signal
       });
 
-      if (!response.ok) {
+      if (!response.ok || !response.body) {
         throw new Error(`Server returned ${response.status}: ${response.statusText}`);
       }
 
-      const data = await response.json();
-      const fullReply: string = data.reply ?? "";
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let sseMeta: Record<string, unknown> | null = null;
+      let sseWorked = false;
 
-      // Typewriter animation — reveal words progressively
-      const words = fullReply.split(" ");
-      let wordIdx = 0;
-
-      await new Promise<void>((resolve) => {
-        const tick = () => {
-          const batch = words.slice(wordIdx, wordIdx + 3).join(" ");
-          const isFirst = wordIdx === 0;
-          wordIdx += 3;
-
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantMsgId
-                ? { ...m, content: m.content + (isFirst ? "" : " ") + batch }
-                : m
-            )
-          );
-
-          if (wordIdx < words.length) {
-            typewriterRef.current = setTimeout(tick, 30);
-          } else {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantMsgId
-                  ? {
-                      ...m,
-                      content: fullReply,
-                      streaming: false,
-                      availability: data.availability ?? null,
-                      needs_dates: data.needs_dates ?? false,
-                      injection_blocked: data.injection_blocked ?? false,
-                      used_fallback: data.used_fallback ?? false,
-                      retrieved_sources: data.retrieved_sources ?? []
-                    }
-                  : m
-              )
-            );
-            if (data.needs_dates) setShowDatePicker(true);
-            resolve();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() ?? "";
+        for (const evt of events) {
+          const line = evt.split("\n").find((l) => l.startsWith("data:"));
+          if (!line) continue;
+          const payload = line.slice(5).trim();
+          if (payload === "[DONE]") continue;
+          try {
+            const data = JSON.parse(payload) as Record<string, unknown>;
+            if (data.type === "token" && typeof data.token === "string") {
+              sseWorked = true;
+              appendTokens(data.token);
+            } else if (data.type === "metadata") {
+              sseMeta = data;
+            } else if (data.type === "error") {
+              throw new Error(String(data.message ?? "Streaming error"));
+            }
+          } catch (parseErr) {
+            if (parseErr instanceof Error && parseErr.message !== "Streaming error") continue;
+            throw parseErr;
           }
-        };
+        }
+      }
 
-        tick();
-      });
+      if (sseMeta) {
+        finalizeMessage(sseMeta);
+      } else if (sseWorked) {
+        // Tokens arrived but no metadata trailer — close the bubble gracefully
+        setMessages((prev) =>
+          prev.map((m) => (m.id === assistantMsgId ? { ...m, streaming: false } : m))
+        );
+      } else {
+        // SSE yielded nothing usable — fall back to the non-streaming endpoint
+        const fallback = await fetch(`${BACKEND_URL}/api/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: newHistory.map((m) => ({ role: m.role, content: m.content }))
+          }),
+          signal: controller.signal
+        });
+        if (!fallback.ok) {
+          throw new Error(`Server returned ${fallback.status}: ${fallback.statusText}`);
+        }
+        const data = await fallback.json();
+        finalizeMessage(data, data.reply ?? "");
+      }
     } catch (err: unknown) {
       if (typewriterRef.current) clearTimeout(typewriterRef.current);
       if (err instanceof Error && err.name === "AbortError") {
@@ -534,20 +590,40 @@ export default function ChatInterface() {
                     </div>
                   )}
 
-                  {m.retrieved_sources && m.retrieved_sources.length > 0 && !isUser && !m.streaming && (
-                    <div className="mt-3 pt-2.5 border-t border-[#1e1e1e] flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-zinc-400">
-                      <Compass className="w-3 h-3 text-yellow-400 shrink-0" />
-                      <span className="text-zinc-500 uppercase">Knowledge Base:</span>
-                      {m.retrieved_sources.slice(0, 2).map((src, i) => (
-                        <span
-                          key={i}
-                          className="bg-[#141414] text-yellow-400 px-1.5 py-0.5 border border-[#262626]"
-                        >
-                          {src}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  {((m.sources && m.sources.length > 0) ||
+                    (m.retrieved_sources && m.retrieved_sources.length > 0)) &&
+                    !isUser &&
+                    !m.streaming && (
+                      <div className="mt-3 pt-2.5 border-t border-[#1e1e1e] flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-zinc-400">
+                        <Compass className="w-3 h-3 text-yellow-400 shrink-0" />
+                        <span className="text-zinc-500 uppercase">Knowledge Base:</span>
+                        {(m.sources && m.sources.length > 0
+                          ? m.sources.slice(0, 3).map((s) => s.title)
+                          : (m.retrieved_sources ?? []).slice(0, 3)
+                        ).map((src, i) => (
+                          <span
+                            key={i}
+                            className="bg-[#141414] text-yellow-400 px-1.5 py-0.5 border border-[#262626]"
+                          >
+                            {src}
+                          </span>
+                        ))}
+                        {m.latency_breakdown && (
+                          <span className="text-zinc-600">
+                            {[
+                              m.latency_breakdown.search_ms !== undefined &&
+                                `search ${Math.round(m.latency_breakdown.search_ms)}ms`,
+                              m.latency_breakdown.rerank_ms !== undefined &&
+                                `rerank ${Math.round(m.latency_breakdown.rerank_ms)}ms`,
+                              m.latency_breakdown.generation_ms !== undefined &&
+                                `gen ${Math.round(m.latency_breakdown.generation_ms)}ms`
+                            ]
+                              .filter(Boolean)
+                              .join(" • ")}
+                          </span>
+                        )}
+                      </div>
+                    )}
                 </div>
               </div>
             </div>

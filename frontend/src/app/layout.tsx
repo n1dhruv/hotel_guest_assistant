@@ -17,6 +17,13 @@ const spaceMono = Space_Mono({
 export const metadata: Metadata = {
   title: "The Grand Azure Goa | Concierge AI",
   description: "AI-Powered Guest Concierge for The Grand Azure Resort & Spa, Goa",
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export default function RootLayout({

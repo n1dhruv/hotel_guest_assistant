@@ -41,61 +41,82 @@ AVAILABILITY_TOOL = {
 def build_system_prompt(retrieved_chunks: list[dict[str, Any]]) -> str:
     """Constructs dynamic system prompt anchored with current date and retrieved hotel facts."""
     today_str = datetime.now().strftime("%Y-%m-%d (%A)")
-    context_text = "\n\n".join([
-        f"[{c['category'].upper()}: {c['title']}]\n{c['content']}"
+    context_text = "\n".join([
+        f"[{c['category'].upper()}] {c['title']}: {c['content']}"
         for c in retrieved_chunks
     ])
 
-    return f"""You are the friendly, professional AI Guest Assistant for The Grand Azure Heritage Resort & Spa in Candolim, Goa, India.
-Today's Date: {today_str}
+    return f"""You are the AI concierge for The Grand Azure Heritage Resort & Spa, Candolim, Goa. Today: {today_str}.
 
-=== HOTEL KNOWLEDGE BASE (GROUND TRUTH) ===
+HOTEL CONTEXT:
 {context_text}
-===========================================
 
-OPERATING RULES:
-1. ANSWER FROM CONTEXT: Use the hotel knowledge base above as your primary source. Synthesize helpful, complete answers from the provided facts. If a question is broad (e.g. "what are the benefits of this hotel?" or "tell me about this hotel"), summarise all relevant details from the context — amenities, rooms, dining, policies, location, etc.
-2. OUT-OF-SCOPE QUESTIONS: If a guest question is genuinely unrelated to the resort (e.g. external Goa sightseeing not offered by the resort, unrelated topics), politely state that and invite them to contact our concierge desk at +91 832 249 8000 or concierge@grandazuregoa.com.
-3. AVAILABILITY REQUESTS:
-   - When a guest inquires about room availability, vacancies, or rates:
-     a) If check-in date, check-out date, and guest count are all provided, invoke the 'check_room_availability' tool.
-     b) If dates or guest count are missing, politely ask the guest to provide the required check-in date, check-out date, and number of adults.
-4. TONE: Warm, welcoming, respectful Indian hospitality (Namaste / Welcome). Keep answers clear, concise, and helpful."""
+RULES:
+- Answer from context above. For broad questions, summarise all relevant facts.
+- For availability/booking requests with dates provided, call check_room_availability. Without dates, ask for them.
+- If truly unrelated to the resort, direct to +91 832 249 8000 / concierge@grandazuregoa.com.
+- Tone: warm, Namaste hospitality, concise."""
 
 
-def _synthesize_broad_answer(chunks: list[dict]) -> str:
-    """Synthesize a comprehensive answer from multiple retrieved chunks for broad queries."""
-    sections = []
+def _synthesize_amenities(_chunks: list[dict]) -> str:
+    """Return ALL amenity chunks directly from the KB — not limited by retrieval k."""
+    amenities = [c for c in kb.chunks if c.get("category") == "amenity"]
+    if not amenities:
+        return "I'm sorry, I don't have detailed amenity information available right now."
+    lines = [f"✨ **{a['title'].replace('Amenity: ', '')}:** {a['content']}" for a in amenities]
+    return (
+        f"Namaste! Here are all {len(amenities)} amenities at The Grand Azure Heritage Resort & Spa:\n\n"
+        + "\n\n".join(lines)
+    )
+
+
+def _synthesize_broad_answer(_chunks: list[dict]) -> str:
+    """Comprehensive overview built from ALL kb.chunks — not limited by retrieval k."""
+    groups: dict[str, list[dict]] = {"property": [], "amenity": [], "room": [], "policy": []}
     seen_keys: set[str] = set()
 
-    for chunk in chunks:
+    for chunk in kb.chunks:           # ← always the full 28 chunks
         category = chunk.get("category", "")
-        title = chunk.get("title", "")
-        content = chunk.get("content", "")
-        key = f"{category}-{title}"
-
-        if key in seen_keys:
+        key = f"{category}-{chunk.get('title', '')}"
+        if key in seen_keys or category not in groups:
             continue
         seen_keys.add(key)
+        groups[category].append(chunk)
 
-        if category == "property":
-            sections.append(f"🏨 **About the Resort:** {content}")
-        elif category == "amenity":
-            sections.append(f"✨ **{title}:** {content}")
-        elif category == "room":
-            sections.append(f"🛏️ **{title}:** {content}")
-        elif category == "policy":
-            sections.append(f"📋 **{title}:** {content}")
-        elif category == "faq":
-            if "| Verified Answer:" in content:
-                answer = content.split("| Verified Answer:")[-1].strip()
-                sections.append(f"💡 {answer}")
+    sections: list[str] = []
+
+    for p in groups["property"]:
+        sections.append(f"🏨 **About the Resort:** {p['content']}")
+
+    if groups["amenity"]:
+        amenity_lines = [
+            f"  • **{a['title'].replace('Amenity: ', '')}:** {a['content']}"
+            for a in groups["amenity"]
+        ]
+        sections.append("✨ **Amenities & Facilities:**\n" + "\n".join(amenity_lines))
+
+    if groups["room"]:
+        room_lines = [
+            f"  • **{r['title'].replace('Room: ', '')}:** {r['content']}"
+            for r in groups["room"]
+        ]
+        sections.append("🛏️ **Room Types:**\n" + "\n".join(room_lines))
+
+    if groups["policy"]:
+        policy_lines = [
+            f"  • **{p['title'].replace('Policy: ', '').capitalize()}:** {p['content']}"
+            for p in groups["policy"]
+        ]
+        sections.append("📋 **Policies:**\n" + "\n".join(policy_lines))
 
     if sections:
-        intro = "Namaste! Here is a comprehensive overview of what The Grand Azure Heritage Resort & Spa has to offer:\n\n"
-        return intro + "\n\n".join(sections)
+        return (
+            "Namaste! Here is a comprehensive overview of The Grand Azure Heritage Resort & Spa:\n\n"
+            + "\n\n".join(sections)
+        )
 
-    return chunks[0]["content"] if chunks else "I apologize, I do not have that information available."
+    return kb.chunks[0]["content"] if kb.chunks else "I apologize, I do not have that information available."
+
 
 
 class AssistantOrchestrator:
@@ -132,8 +153,8 @@ class AssistantOrchestrator:
                 "retrieved_sources": []
             }
 
-        # 2. Semantic RAG Retrieval — increased k to 6 for broader coverage
-        retrieved = kb.retrieve(last_user_message, k=6)
+        # 2. Semantic RAG Retrieval — k adapts to query breadth
+        retrieved = kb.retrieve(last_user_message, k=7)
         sources = [c["title"] for c in retrieved]
 
         # 3. If LiteLLM is enabled with an active provider key
@@ -167,8 +188,8 @@ class AssistantOrchestrator:
             yield {"type": "metadata", "tool_called": False, "availability": None, "used_fallback": True, "injection_blocked": True, "retrieved_sources": []}
             return
 
-        # RAG Retrieval
-        retrieved = kb.retrieve(last_user_message, k=6)
+        # RAG Retrieval — k adapts to query breadth
+        retrieved = kb.retrieve(last_user_message, k=7)
         sources = [c["title"] for c in retrieved]
 
         if not settings.MOCK_LLM:
@@ -308,7 +329,7 @@ class AssistantOrchestrator:
             messages=llm_messages,
             tools=[AVAILABILITY_TOOL],
             tool_choice="auto",
-            timeout=10
+            timeout=3
         )
 
         choice = response.choices[0]
@@ -421,12 +442,28 @@ class AssistantOrchestrator:
             top_chunk = retrieved[0]
             top_score = top_chunk.get("score", 0.0)
 
-            # Broad-question detection — synthesize from all chunks
+            # Amenity-specific listing query — show all amenity chunks
+            amenity_list_keywords = ["amenities", "all amenities", "all facilities", "facilities", "what amenities"]
+            is_amenity_list = any(k in q_lower for k in amenity_list_keywords)
+
+            if is_amenity_list:
+                reply = _synthesize_amenities(retrieved)
+                return {
+                    "reply": reply,
+                    "tool_called": False,
+                    "availability": None,
+                    "used_fallback": False,
+                    "injection_blocked": False,
+                    "retrieved_sources": sources
+                }
+
+            # General broad-question detection — synthesize grouped overview
             broad_keywords = [
                 "benefit", "benefits", "feature", "features", "offer", "offers",
                 "highlight", "highlights", "about", "overview", "tell me",
                 "what do you have", "what is special", "what makes", "speciality",
-                "facilities", "what all", "everything", "all about", "describe"
+                "what all", "everything", "all about", "describe", "list",
+                "all policies", "room types", "all rooms"
             ]
             is_broad_query = any(k in q_lower for k in broad_keywords)
 
@@ -441,23 +478,46 @@ class AssistantOrchestrator:
                     "retrieved_sources": sources
                 }
 
-            # For specific queries: answer from top chunk if score >= 0.5 (was 1.5)
-            if top_score >= 0.5:
-                content = top_chunk["content"]
-                category = top_chunk.get("category", "")
+            # Calculate token overlap between query and top retrieved chunk
+            q_tokens = kb._tokenize(query)
+            doc_tokens = set(kb._tokenize(top_chunk["title"] + " " + top_chunk["content"]))
+            overlap = [t for t in q_tokens if t in doc_tokens]
+            overlap_ratio = len(overlap) / len(q_tokens) if q_tokens else 0.0
 
-                if category == "faq" and "| Verified Answer:" in content:
-                    reply = content.split("| Verified Answer:")[-1].strip()
-                elif category == "amenity":
-                    reply = f"Yes! {content}"
-                elif category == "policy":
-                    reply = f"{content}"
-                elif category == "room":
-                    reply = f"For room recommendations: {content}"
-                elif category == "property":
-                    reply = f"{content}"
-                else:
-                    reply = content
+            # For specific queries: require substantive grounding (not an accidental 1-word collision)
+            if top_score >= 1.5 and overlap_ratio >= 0.25:
+                threshold = top_score * 0.7  # include chunks within 30% of best score
+                relevant = [c for c in retrieved if c.get("score", 0.0) >= threshold]
+
+                # Group chunks by canonical topic (e.g. 'pool', 'breakfast', 'checkin', 'checkout')
+                topic_groups: dict[str, list[dict]] = {}
+                for chunk in relevant:
+                    t = chunk.get("topic") or chunk.get("id")
+                    topic_groups.setdefault(t, []).append(chunk)
+
+                answers = []
+                selected_sources = []
+
+                for topic, chunks in topic_groups.items():
+                    # For each topic, pick the single best chunk:
+                    # Prefer FAQ chunk if present for polished conversational answer; otherwise highest scoring chunk
+                    best_chunk = next((c for c in chunks if c.get("category") == "faq"), chunks[0])
+                    content = best_chunk["content"]
+                    category = best_chunk.get("category", "")
+
+                    if category == "faq" and "| Verified Answer:" in content:
+                        answers.append(content.split("| Verified Answer:")[-1].strip())
+                    elif category == "amenity":
+                        answers.append(f"Yes! {content}")
+                    elif category in ("policy", "property"):
+                        answers.append(content)
+                    elif category == "room":
+                        answers.append(f"For room recommendations: {content}")
+                    else:
+                        answers.append(content)
+                    selected_sources.append(best_chunk["title"])
+
+                reply = "\n\n".join(answers) if answers else top_chunk["content"]
 
                 return {
                     "reply": reply,
@@ -465,24 +525,7 @@ class AssistantOrchestrator:
                     "availability": None,
                     "used_fallback": False,
                     "injection_blocked": False,
-                    "retrieved_sources": sources
-                }
-
-            # Score > 0 but below 0.5 — still answer from best chunk rather than falling back
-            if top_score > 0.0:
-                content = top_chunk["content"]
-                category = top_chunk.get("category", "")
-                if category == "faq" and "| Verified Answer:" in content:
-                    reply = content.split("| Verified Answer:")[-1].strip()
-                else:
-                    reply = content
-                return {
-                    "reply": reply,
-                    "tool_called": False,
-                    "availability": None,
-                    "used_fallback": False,
-                    "injection_blocked": False,
-                    "retrieved_sources": sources
+                    "retrieved_sources": selected_sources or sources
                 }
 
         # Genuine out-of-scope — Graceful fallback

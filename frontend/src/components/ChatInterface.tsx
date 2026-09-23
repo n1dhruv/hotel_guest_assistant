@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { flushSync } from "react-dom";
 import {
   Send,
   Bot,
@@ -25,7 +24,6 @@ import AvailabilityCard, { AvailabilityData } from "./AvailabilityCard";
 import DateGuestPicker from "./DateGuestPicker";
 import FormattedMessage from "./FormattedMessage";
 
-
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -35,7 +33,7 @@ interface Message {
   injection_blocked?: boolean;
   used_fallback?: boolean;
   retrieved_sources?: string[];
-  /** True while the message is still being streamed */
+  /** True while the typewriter animation is still running */
   streaming?: boolean;
 }
 
@@ -67,6 +65,8 @@ export default function ChatInterface() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  // Keeps the current typewriter interval so we can cancel on abort/reset
+  const typewriterRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -93,27 +93,22 @@ export default function ChatInterface() {
     setMessages(newHistory);
     setIsLoading(true);
 
-    // Placeholder streaming message
     const assistantMsgId = `assistant-${Date.now()}`;
-    // Plain variable to accumulate content — lives entirely within this async call
-    let streamingContent = "";
 
-    flushSync(() => {
-      setMessages((prev) => [
-        ...prev,
-        { id: assistantMsgId, role: "assistant", content: "", streaming: true } as Message
-      ]);
-    });
+    // Add placeholder with blinking cursor while the fetch is in-flight
+    setMessages((prev) => [
+      ...prev,
+      { id: assistantMsgId, role: "assistant", content: "", streaming: true } as Message
+    ]);
 
-    // Abort any previous in-flight request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
+    // Abort any in-flight request
+    if (abortControllerRef.current) abortControllerRef.current.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
     try {
-      const response = await fetch(`${BACKEND_URL}/api/chat/stream`, {
+      // ── Single regular fetch — no SSE overhead ─────────────────────────────
+      const response = await fetch(`${BACKEND_URL}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -126,88 +121,69 @@ export default function ChatInterface() {
         throw new Error(`Server returned ${response.status}: ${response.statusText}`);
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("No response body");
+      const data = await response.json();
+      const fullReply: string = data.reply ?? "";
 
-      const decoder = new TextDecoder();
-      let buffer = "";
+      // ── Typewriter animation — words revealed progressively ────────────────
+      // The network round-trip is already done; we're just animating the display.
+      const words = fullReply.split(" ");
+      let wordIdx = 0;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      await new Promise<void>((resolve) => {
+        const tick = () => {
+          // Reveal 3 words per tick → ~100 wpm at 30 ms/tick, looks natural
+          const batch = words.slice(wordIdx, wordIdx + 3).join(" ");
+          const isFirst = wordIdx === 0;
+          wordIdx += 3;
 
-        buffer += decoder.decode(value, { stream: true });
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMsgId
+                ? { ...m, content: m.content + (isFirst ? "" : " ") + batch }
+                : m
+            )
+          );
 
-        // SSE lines are separated by \n; incomplete trailing line stays in buffer
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const raw = line.slice(6).trim();
-          if (raw === "[DONE]") break;
-
-          let parsed: Record<string, unknown>;
-          try {
-            parsed = JSON.parse(raw);
-          } catch {
-            continue; // skip malformed SSE lines
+          if (wordIdx < words.length) {
+            typewriterRef.current = setTimeout(tick, 30);
+          } else {
+            // Final commit: set exact full text + all metadata
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMsgId
+                  ? {
+                      ...m,
+                      content: fullReply,
+                      streaming: false,
+                      availability: data.availability ?? null,
+                      needs_dates: data.needs_dates ?? false,
+                      injection_blocked: data.injection_blocked ?? false,
+                      used_fallback: data.used_fallback ?? false,
+                      retrieved_sources: data.retrieved_sources ?? []
+                    }
+                  : m
+              )
+            );
+            if (data.needs_dates) setShowDatePicker(true);
+            resolve();
           }
+        };
 
-          if (parsed.type === "token") {
-            // Accumulate in local var first so we always have the latest full text
-            streamingContent += parsed.token as string;
-            // flushSync breaks React 18 automatic batching → each token paints immediately
-            flushSync(() => {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantMsgId
-                    ? { ...m, content: streamingContent }
-                    : m
-                )
-              );
-            });
-          } else if (parsed.type === "metadata") {
-            flushSync(() => {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantMsgId
-                    ? {
-                        ...m,
-                        streaming: false,
-                        availability: parsed.availability as Message["availability"],
-                        needs_dates: parsed.needs_dates as boolean,
-                        injection_blocked: parsed.injection_blocked as boolean,
-                        used_fallback: parsed.used_fallback as boolean,
-                        retrieved_sources: parsed.retrieved_sources as string[]
-                      }
-                    : m
-                )
-              );
-            });
-
-            if (parsed.needs_dates) {
-              setShowDatePicker(true);
-            }
-          } else if (parsed.type === "error") {
-            throw new Error(parsed.message as string);
-          }
-        }
-      }
+        tick(); // start immediately
+      });
     } catch (err: unknown) {
+      if (typewriterRef.current) clearTimeout(typewriterRef.current);
       if (err instanceof Error && err.name === "AbortError") {
-        // User aborted — clean up placeholder
         setMessages((prev) => prev.filter((m) => m.id !== assistantMsgId));
       } else {
         console.error("Chat error:", err);
-        // Remove placeholder and show error
         setMessages((prev) => prev.filter((m) => m.id !== assistantMsgId));
         setErrorMessage(
           "Could not connect to resort assistant backend. Please ensure the server is running on port 8000."
         );
       }
     } finally {
-      // Ensure streaming flag is cleared even if metadata event was missed
+      // Ensure streaming flag cleared even if something went wrong mid-animation
       setMessages((prev) =>
         prev.map((m) => (m.id === assistantMsgId ? { ...m, streaming: false } : m))
       );
@@ -222,6 +198,7 @@ export default function ChatInterface() {
 
   const handleResetChat = () => {
     if (abortControllerRef.current) abortControllerRef.current.abort();
+    if (typewriterRef.current) clearTimeout(typewriterRef.current);
     setMessages([INITIAL_MESSAGE]);
     setShowDatePicker(false);
     setErrorMessage(null);
@@ -251,7 +228,6 @@ export default function ChatInterface() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Quick Property Info Drawer Button */}
           <button
             type="button"
             onClick={() => setShowInfoModal((prev) => !prev)}
@@ -262,7 +238,6 @@ export default function ChatInterface() {
             <span className="hidden sm:inline">Hotel Facts</span>
           </button>
 
-          {/* Reset Conversation */}
           <button
             type="button"
             onClick={handleResetChat}
@@ -273,7 +248,6 @@ export default function ChatInterface() {
             <span className="hidden md:inline">Reset</span>
           </button>
 
-          {/* Live Status Indicator */}
           <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-[#111111] border border-[#262626] text-yellow-400 text-[11px] font-mono">
             <span className="w-1.5 h-1.5 bg-yellow-400"></span>
             <span>ONLINE</span>
@@ -281,12 +255,12 @@ export default function ChatInterface() {
         </div>
       </div>
 
-      {/* Property Facts Modal / Drawer (if opened) */}
+      {/* Property Facts Modal */}
       {showInfoModal && (
         <div className="p-4 bg-[#0a0a0a] border-b border-[#222222] text-xs font-mono space-y-3 shrink-0 animate-in fade-in duration-150">
           <div className="flex items-center justify-between border-b border-[#1c1c1c] pb-2">
             <span className="text-yellow-400 uppercase tracking-widest font-bold text-xs flex items-center gap-2">
-              <Info className="w-3.5 h-3.5" /> Quick Hotel Guide & Policies
+              <Info className="w-3.5 h-3.5" /> Quick Hotel Guide &amp; Policies
             </span>
             <button
               onClick={() => setShowInfoModal(false)}
@@ -303,35 +277,30 @@ export default function ChatInterface() {
               </div>
               <div className="text-zinc-300">2:00 PM IST Check-in • 11:00 AM IST Check-out</div>
             </div>
-
             <div className="p-2.5 bg-black border border-[#222222] space-y-1">
               <div className="text-yellow-400 font-bold flex items-center gap-1.5">
                 <Waves className="w-3.5 h-3.5" /> Infinity Pool
               </div>
               <div className="text-zinc-300">Heated oceanview pool open daily 6 AM – 9 PM</div>
             </div>
-
             <div className="p-2.5 bg-black border border-[#222222] space-y-1">
               <div className="text-yellow-400 font-bold flex items-center gap-1.5">
                 <Coffee className="w-3.5 h-3.5" /> Complimentary Breakfast
               </div>
-              <div className="text-zinc-300">Royal buffet with Pure Veg & Jain counters (7–10:30 AM)</div>
+              <div className="text-zinc-300">Royal buffet with Pure Veg &amp; Jain counters (7–10:30 AM)</div>
             </div>
-
             <div className="p-2.5 bg-black border border-[#222222] space-y-1">
               <div className="text-yellow-400 font-bold flex items-center gap-1.5">
-                <Zap className="w-3.5 h-3.5" /> EV Charging & Valet
+                <Zap className="w-3.5 h-3.5" /> EV Charging &amp; Valet
               </div>
-              <div className="text-zinc-300">Tata Power & universal fast chargers on site</div>
+              <div className="text-zinc-300">Tata Power &amp; universal fast chargers on site</div>
             </div>
-
             <div className="p-2.5 bg-black border border-[#222222] space-y-1">
               <div className="text-yellow-400 font-bold flex items-center gap-1.5">
                 <ShieldCheck className="w-3.5 h-3.5" /> Mandatory ID
               </div>
               <div className="text-zinc-300">Aadhaar / Passport / Voter ID required by law</div>
             </div>
-
             <div className="p-2.5 bg-black border border-[#222222] space-y-1">
               <div className="text-yellow-400 font-bold flex items-center gap-1.5">
                 <Phone className="w-3.5 h-3.5" /> Front Desk
@@ -346,7 +315,6 @@ export default function ChatInterface() {
       <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 bg-black">
         {messages.map((m) => {
           const isUser = m.role === "user";
-
           return (
             <div
               key={m.id}
@@ -354,7 +322,6 @@ export default function ChatInterface() {
                 isUser ? "ml-auto flex-row-reverse" : "mr-auto"
               }`}
             >
-              {/* Sharp Square Avatar */}
               <div
                 className={`w-7 h-7 flex items-center justify-center shrink-0 text-xs font-mono font-bold ${
                   isUser
@@ -365,7 +332,6 @@ export default function ChatInterface() {
                 {isUser ? <User className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5" />}
               </div>
 
-              {/* Message Content Bubble */}
               <div className="flex flex-col space-y-1">
                 <div
                   className={`p-3.5 text-xs sm:text-sm leading-relaxed ${
@@ -381,24 +347,32 @@ export default function ChatInterface() {
                     </div>
                   )}
 
-                  <FormattedMessage content={m.content} isUser={isUser} />
-
-                  {/* Streaming cursor */}
-                  {m.streaming && (
-                    <span className="inline-block w-2 h-4 bg-yellow-400 animate-pulse ml-0.5 align-middle" />
+                  {/* Empty state: show pulsing dots while waiting for first word */}
+                  {m.streaming && m.content === "" ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-mono text-zinc-400">Thinking</span>
+                      <span className="w-1.5 h-1.5 bg-yellow-400 rounded-full animate-bounce [animation-delay:0ms]" />
+                      <span className="w-1.5 h-1.5 bg-yellow-400 rounded-full animate-bounce [animation-delay:150ms]" />
+                      <span className="w-1.5 h-1.5 bg-yellow-400 rounded-full animate-bounce [animation-delay:300ms]" />
+                    </div>
+                  ) : (
+                    <>
+                      <FormattedMessage content={m.content} isUser={isUser} />
+                      {/* Blinking cursor while typewriter is running */}
+                      {m.streaming && (
+                        <span className="inline-block w-2 h-[1em] bg-yellow-400 animate-pulse ml-0.5 align-middle" />
+                      )}
+                    </>
                   )}
 
-                  {/* Structured Availability Cards */}
-                  {m.availability && <AvailabilityCard data={m.availability} />}
+                  {!m.streaming && m.availability && <AvailabilityCard data={m.availability} />}
 
-                  {/* Inline Date Selector */}
-                  {m.needs_dates && (
+                  {!m.streaming && m.needs_dates && (
                     <div className="mt-3">
                       <DateGuestPicker onSearch={handleFormSearch} isLoading={isLoading} />
                     </div>
                   )}
 
-                  {/* Verified Sources Badge */}
                   {m.retrieved_sources && m.retrieved_sources.length > 0 && !isUser && !m.streaming && (
                     <div className="mt-3 pt-2.5 border-t border-[#1e1e1e] flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-zinc-400">
                       <Compass className="w-3 h-3 text-yellow-400" />
@@ -419,7 +393,6 @@ export default function ChatInterface() {
           );
         })}
 
-        {/* Error Notification */}
         {errorMessage && (
           <div className="p-3 bg-[#1c1114] border border-red-500/50 text-red-300 text-xs font-mono flex items-center justify-between">
             <span>{errorMessage}</span>
@@ -435,14 +408,13 @@ export default function ChatInterface() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Interactive Date Picker Toggle Section */}
       {showDatePicker && (
         <div className="p-3 border-t border-[#222222] bg-black">
           <DateGuestPicker onSearch={handleFormSearch} isLoading={isLoading} />
         </div>
       )}
 
-      {/* Suggested Quick Prompts */}
+      {/* Quick Prompts */}
       <div className="px-3 py-2 border-t border-[#1c1c1c] bg-black">
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
           <span className="text-[10px] font-mono uppercase tracking-wider text-yellow-400 shrink-0 flex items-center gap-1 mr-1">
@@ -468,7 +440,7 @@ export default function ChatInterface() {
         </div>
       </div>
 
-      {/* Message Input Box */}
+      {/* Input Box */}
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -484,7 +456,6 @@ export default function ChatInterface() {
           disabled={isLoading}
           className="flex-1 px-3.5 py-2.5 bg-black border border-[#282828] focus:border-yellow-400 text-white placeholder-zinc-500 text-xs sm:text-sm outline-none transition-colors font-sans"
         />
-
         <button
           type="submit"
           disabled={isLoading || !input.trim()}

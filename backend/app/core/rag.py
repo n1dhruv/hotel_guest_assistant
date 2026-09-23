@@ -71,11 +71,36 @@ class HotelKnowledgeBase:
         with open(self.data_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
+        # Canonical topic maps for cross-category deduplication
+        amenity_topics = ["pool", "spa_gym", "breakfast", "wifi", "parking", "dining"]
+        policy_topics = {
+            "cancellation": "cancellation",
+            "checkInCheckOut": "checkincheckout",
+            "idVerification": "id_verification",
+            "pets": "pets",
+            "children": "children",
+            "smoking": "smoking",
+            "payment": "payment"
+        }
+        faq_topics = {
+            "faq-1": "checkin",
+            "faq-2": "checkout",
+            "faq-3": "pool",
+            "faq-4": "breakfast",
+            "faq-5": "room_recommendation",
+            "faq-6": "cancellation",
+            "faq-7": "parking",
+            "faq-8": "pets",
+            "faq-9": "id_verification",
+            "faq-10": "dining"
+        }
+
         # 1. Property Overview Chunk
         prop = data.get("property", {})
         self.chunks.append({
             "id": "property-overview",
             "category": "property",
+            "topic": "property",
             "title": f"About {prop.get('name')}",
             "content": (
                 f"{prop.get('name')} - {prop.get('tagline')}. Located at {prop.get('address')}. "
@@ -88,9 +113,11 @@ class HotelKnowledgeBase:
 
         # 2. Amenity Chunks
         for i, a in enumerate(data.get("amenities", [])):
+            topic = amenity_topics[i] if i < len(amenity_topics) else f"amenity_{i}"
             self.chunks.append({
                 "id": f"amenity-{i}-{a.get('name', '').lower().replace(' ', '-')}",
                 "category": "amenity",
+                "topic": topic,
                 "title": f"Amenity: {a.get('name')}",
                 "content": f"{a.get('name')} | Timings: {a.get('hours')}. Description: {a.get('description')}"
             })
@@ -100,6 +127,7 @@ class HotelKnowledgeBase:
             self.chunks.append({
                 "id": f"room-{r.get('id')}",
                 "category": "room",
+                "topic": f"room_{r.get('id')}",
                 "title": f"Room: {r.get('type')}",
                 "content": (
                     f"{r.get('type')} (ID: {r.get('id')}) | Maximum Capacity: {r.get('maxGuests')} guests. "
@@ -111,18 +139,23 @@ class HotelKnowledgeBase:
         # 4. Policy Chunks
         policies = data.get("policies", {})
         for pol_key, pol_val in policies.items():
+            topic = policy_topics.get(pol_key, f"policy_{pol_key}")
             self.chunks.append({
                 "id": f"policy-{pol_key}",
                 "category": "policy",
+                "topic": topic,
                 "title": f"Policy: {pol_key.capitalize()}",
                 "content": f"The Grand Azure Resort {pol_key.capitalize()} Policy: {pol_val}"
             })
 
         # 5. Curated FAQ Chunks
         for faq in data.get("faqs", []):
+            faq_id = faq.get("id", "")
+            topic = faq_topics.get(faq_id, f"faq_{faq_id}")
             self.chunks.append({
-                "id": faq.get("id"),
+                "id": faq_id,
                 "category": "faq",
+                "topic": topic,
                 "title": f"FAQ: {faq.get('q')}",
                 "content": f"Guest Question: {faq.get('q')} | Verified Answer: {faq.get('a')}"
             })

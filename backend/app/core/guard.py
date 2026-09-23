@@ -3,24 +3,22 @@ import re
 # Comprehensive list of regex patterns covering known prompt injections,
 # system prompt leakage attempts, and jailbreaks.
 INJECTION_PATTERNS = [
-    r"ignore\s+(all\s+|previous\s+|prior\s+)?instructions",
-    r"disregard\s+(all\s+|previous\s+|prior\s+)?instructions",
-    r"forget\s+(all\s+|previous\s+|prior\s+)?instructions",
-    r"reveal\s+(your\s+)?(system\s+prompt|instructions|secret|hidden\s+prompt)",
-    r"what\s+(is|are)\s+your\s+(system\s+prompt|initial\s+instructions|system\s+instructions)",
-    r"print\s+(your\s+)?(system\s+prompt|initial\s+prompt)",
-    r"show\s+(me\s+)?(your\s+)?(system\s+prompt|instructions)",
-    r"you\s+are\s+now\s+(an?\s+)?(unrestricted|dan|developer|jailbreak|evil)",
-    r"pretend\s+(you\s+are|to\s+be)\s+",
-    r"act\s+as\s+(a\s+)?(dan|developer\s+mode|unfiltered\s+ai|jailbreak)",
+    r"(?:ignore|disregard|forget)\s+(?:all\s+|previous\s+|prior\s+|earlier\s+)*instructions",
+    r"reveal\s+(?:your\s+)?(?:system\s+prompt|instructions|secret|hidden\s+prompt)",
+    r"what\s+(?:is|are)\s+your\s+(?:system\s+prompt|initial\s+instructions|system\s+instructions)",
+    r"print\s+(?:your\s+)?(?:system\s+prompt|initial\s+prompt)",
+    r"show\s+(?:me\s+)?(?:your\s+)?(?:system\s+prompt|instructions)",
+    r"you\s+are\s+now\s+(?:an?\s+)?(?:unrestricted|dan|developer|jailbreak|evil)",
+    r"pretend\s+(?:you\s+are|to\s+be)\s+",
+    r"act\s+as\s+(?:a\s+)?(?:dan|developer\s+mode|unfiltered\s+ai|jailbreak)",
     r"<\|im_start\|>",
     r"<\|im_end\|>",
     r"\[INST\]",
     r"\[\/INST\]",
     r"system:\s*",
     r"developer\s+mode\s+enabled",
-    r"bypass\s+(all\s+)?(safety\s+guidelines|restrictions|filters|content\s+policy)",
-    r"override\s+(all\s+)?(safety|rules|instructions)"
+    r"bypass\s+(?:all\s+)?(?:safety\s+guidelines|restrictions|filters|content\s+policy)",
+    r"override\s+(?:all\s+)?(?:safety|rules|instructions)"
 ]
 
 _COMPILED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in INJECTION_PATTERNS]

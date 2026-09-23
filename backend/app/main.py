@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api.chat import router as chat_router
 from app.api.availability import router as availability_router
+from app.api.stats import router as stats_router
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -23,6 +24,7 @@ app.add_middleware(
 # Include Routers
 app.include_router(chat_router)
 app.include_router(availability_router)
+app.include_router(stats_router)
 
 @app.get("/")
 def root():

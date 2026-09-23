@@ -118,7 +118,7 @@ class AssistantOrchestrator:
             messages=llm_messages,
             tools=[AVAILABILITY_TOOL],
             tool_choice="auto",
-            temperature=0.1
+            timeout=15
         )
 
         choice = response.choices[0]
@@ -152,7 +152,7 @@ class AssistantOrchestrator:
             second_res = await acompletion(
                 model=settings.LLM_MODEL,
                 messages=llm_messages,
-                temperature=0.1
+                timeout=15
             )
             reply = second_res.choices[0].message.content
         else:

@@ -15,10 +15,18 @@ STOPWORDS = {
     "the", "is", "at", "which", "on", "a", "an", "this", "that", "to", "of",
     "for", "with", "does", "do", "you", "have", "can", "what", "where", "how",
     "are", "about", "hotel", "resort", "grand", "azure", "tell", "me", "any",
-    "please", "i", "we", "my", "our", "would", "like"
+    "please", "i", "we", "my", "our", "would", "like", "if", "yes", "no", "so",
+    "when", "why", "who", "want", "need", "could", "should", "there", "also"
 }
 
 SYNONYMS = {
+    "cancel": ["cancellation", "cancellations", "cancelling", "cancelled"],
+    "cancellation": ["cancel", "cancelling", "cancelled"],
+    "cancelling": ["cancel", "cancellation"],
+    "reservation": ["booking", "bookings", "reserve", "reservations"],
+    "reserve": ["reservation", "booking", "reservations"],
+    "booking": ["reservation", "reserve", "bookings"],
+    "bookings": ["reservation", "booking"],
     "dog": ["pets"], "dogs": ["pets"], "cat": ["pets"], "cats": ["pets"],
     "smoke": ["smoking"], "smoking": ["smoke"], "cig": ["smoking"], "cigarettes": ["smoking"],
     "wifi": ["wi-fi", "internet"], "internet": ["wifi"],
@@ -48,7 +56,7 @@ class HotelKnowledgeBase:
     - Dual-mode embedding support:
         1. Dense OpenAI Embeddings (text-embedding-3-small) if API key is present.
         2. High-precision BM25 lexical retriever with stopword elimination, compound phrase
-           normalization, and title weighting for local / offline / test execution.
+           normalization, morphological suffix stripping, and title weighting.
     - Ensures that regardless of LLM credentials, semantic retrieval yields accurate, grounded facts.
     """
     def __init__(self, data_path: Path = HOTEL_DATA_FILE):
@@ -143,6 +151,10 @@ class HotelKnowledgeBase:
         for w in words:
             if w not in STOPWORDS:
                 expanded.append(w)
+                if w.endswith("ation"):
+                    expanded.append(w[:-5])
+                if w.endswith("ations"):
+                    expanded.append(w[:-6])
                 stemmed = re.sub(r"(?:ing|ed|es|s)$", "", w)
                 if stemmed and len(stemmed) >= 3 and stemmed != w:
                     expanded.append(stemmed)

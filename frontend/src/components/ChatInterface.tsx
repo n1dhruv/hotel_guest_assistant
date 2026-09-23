@@ -22,6 +22,8 @@ import {
 
 import AvailabilityCard, { AvailabilityData } from "./AvailabilityCard";
 import DateGuestPicker from "./DateGuestPicker";
+import FormattedMessage from "./FormattedMessage";
+
 
 interface Message {
   id: string;
@@ -292,7 +294,8 @@ export default function ChatInterface() {
                     </div>
                   )}
 
-                  <p className="whitespace-pre-wrap">{m.content}</p>
+                  <FormattedMessage content={m.content} isUser={isUser} />
+
 
                   {/* Structured Availability Cards */}
                   {m.availability && <AvailabilityCard data={m.availability} />}

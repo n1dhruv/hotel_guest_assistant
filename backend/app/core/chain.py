@@ -118,7 +118,7 @@ class AssistantOrchestrator:
             messages=llm_messages,
             tools=[AVAILABILITY_TOOL],
             tool_choice="auto",
-            timeout=15
+            timeout=5
         )
 
         choice = response.choices[0]
@@ -148,13 +148,13 @@ class AssistantOrchestrator:
                         "content": json.dumps(avail_result)
                     })
 
-            # Synthesize natural response with tool output
-            second_res = await acompletion(
-                model=settings.LLM_MODEL,
-                messages=llm_messages,
-                timeout=15
-            )
-            reply = second_res.choices[0].message.content
+            # Instant synthesis using verified tool results - avoids slow second LLM network roundtrip
+            nights = avail_result.get("nights", 1)
+            room_count = len(avail_result.get("rooms", []))
+            if avail_result.get("available", False):
+                reply = f"Namaste! I have checked our live inventory for {args.get('checkIn')} to {args.get('checkOut')} ({nights} night{'s' if nights > 1 else ''}) for {args.get('adults', 2)} guest(s). We have {room_count} room tier{'s' if room_count > 1 else ''} available for your stay. You can view the details and pricing in the cards below:"
+            else:
+                reply = f"Namaste! {avail_result.get('message', 'We could not find matching rooms for those dates.')}"
         else:
             reply = msg.content
 

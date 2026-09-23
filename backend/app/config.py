@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -6,7 +7,22 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 class Settings(BaseSettings):
     APP_NAME: str = "The Grand Azure Heritage Resort & Spa (Goa, India)"
     DEBUG: bool = True
+
+    # LiteLLM Universal Model Selection
+    # Examples:
+    # - "gpt-4o-mini" (OpenAI)
+    # - "gemini/gemini-2.0-flash" or "gemini/gemini-1.5-flash" (Google Gemini)
+    # - "claude-3-5-sonnet-20241022" (Anthropic)
+    # - "groq/llama-3.3-70b-versatile" (Groq)
+    # - "ollama/llama3" (Local Ollama, zero key required)
+    LLM_MODEL: str = "gpt-4o-mini"
+
+    # API Keys for different providers
     OPENAI_API_KEY: str = ""
+    GEMINI_API_KEY: str = ""
+    ANTHROPIC_API_KEY: str = ""
+    GROQ_API_KEY: str = ""
+
     MOCK_LLM: bool = False
     HOTEL_DATA_PATH: Path = BASE_DIR / "app" / "data" / "hotel_data.json"
     CORS_ORIGINS: list[str] = [
@@ -19,6 +35,24 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# If no OPENAI_API_KEY is provided, automatically fall back to MOCK_LLM mode
-if not settings.OPENAI_API_KEY or settings.OPENAI_API_KEY.strip() == "":
+# Pass API keys into os.environ for LiteLLM
+if settings.OPENAI_API_KEY:
+    os.environ["OPENAI_API_KEY"] = settings.OPENAI_API_KEY
+if settings.GEMINI_API_KEY:
+    os.environ["GEMINI_API_KEY"] = settings.GEMINI_API_KEY
+if settings.ANTHROPIC_API_KEY:
+    os.environ["ANTHROPIC_API_KEY"] = settings.ANTHROPIC_API_KEY
+if settings.GROQ_API_KEY:
+    os.environ["GROQ_API_KEY"] = settings.GROQ_API_KEY
+
+# Determine if any key or local model is active
+has_any_key = bool(
+    settings.OPENAI_API_KEY.strip()
+    or settings.GEMINI_API_KEY.strip()
+    or settings.ANTHROPIC_API_KEY.strip()
+    or settings.GROQ_API_KEY.strip()
+    or settings.LLM_MODEL.startswith("ollama/")
+)
+
+if not has_any_key:
     settings.MOCK_LLM = True

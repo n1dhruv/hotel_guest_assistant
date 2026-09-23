@@ -11,16 +11,45 @@ from app.config import settings
 BASE_DIR = Path(__file__).resolve().parent.parent
 HOTEL_DATA_FILE = BASE_DIR / "data" / "hotel_data.json"
 
+STOPWORDS = {
+    "the", "is", "at", "which", "on", "a", "an", "this", "that", "to", "of",
+    "for", "with", "does", "do", "you", "have", "can", "what", "where", "how",
+    "are", "about", "hotel", "resort", "grand", "azure", "tell", "me", "any",
+    "please", "i", "we", "my", "our", "would", "like"
+}
+
+SYNONYMS = {
+    "dog": ["pets"], "dogs": ["pets"], "cat": ["pets"], "cats": ["pets"],
+    "smoke": ["smoking"], "smoking": ["smoke"], "cig": ["smoking"], "cigarettes": ["smoking"],
+    "wifi": ["wi-fi", "internet"], "internet": ["wifi"],
+    "food": ["breakfast", "restaurant", "dining"],
+    "dinner": ["restaurant", "dining"], "lunch": ["restaurant", "dining"],
+    "location": ["address", "candolim", "located"], "located": ["location", "address", "candolim"],
+    "address": ["location", "candolim", "located"], "reach": ["location", "address", "candolim"],
+    "pool": ["swimming", "infinity", "pool"], "swimming": ["pool", "infinity"],
+    "gym": ["fitness", "spa"], "workout": ["fitness", "gym"], "spa": ["massage", "wellness"],
+    "id": ["aadhaar", "passport", "identity", "verification"],
+    "aadhaar": ["id", "identity", "verification"],
+}
+
+def normalize_text(text: str) -> str:
+    t = text.lower()
+    t = re.sub(r"\bcheck[\s-]+in\b", "checkin", t)
+    t = re.sub(r"\bcheck[\s-]+out\b", "checkout", t)
+    t = re.sub(r"\bwi[\s-]+fi\b", "wifi", t)
+    return t
+
 class HotelKnowledgeBase:
     """
-    RAG-Lite In-Memory Vector Store and Retriever.
+    RAG-Lite In-Memory Vector Store and BM25/Cosine Retriever.
     
     Architecture Design:
     - At startup, loads and segments hotel ground truth into semantic chunks.
     - Dual-mode embedding support:
         1. Dense OpenAI Embeddings (text-embedding-3-small) if API key is present.
-        2. Zero-dependency TF-IDF cosine-similarity retriever for local / offline / test execution.
-    - Demonstrates true RAG retrieval without the operational overhead of an external vector DB.
+        2. High-precision BM25 lexical retriever with stopword elimination, compound phrase
+           normalization, and title weighting for local / offline / test execution.
+    - Ensures that regardless of LLM credentials, semantic retrieval yields accurate, grounded facts.
     """
     def __init__(self, data_path: Path = HOTEL_DATA_FILE):
         self.data_path = data_path
@@ -42,7 +71,8 @@ class HotelKnowledgeBase:
             "title": f"About {prop.get('name')}",
             "content": (
                 f"{prop.get('name')} - {prop.get('tagline')}. Located at {prop.get('address')}. "
-                f"Standard check-in time is {prop.get('checkIn')} and check-out time is {prop.get('checkOut')}. "
+                f"Location is Candolim Beach, North Goa. Standard checkin time is {prop.get('checkIn')} "
+                f"and checkout time is {prop.get('checkOut')}. "
                 f"Contact numbers: {prop.get('contact', {}).get('phone')}, Mobile: {prop.get('contact', {}).get('mobile')}, "
                 f"Email: {prop.get('contact', {}).get('email')}."
             )
@@ -90,7 +120,7 @@ class HotelKnowledgeBase:
             })
 
     def _init_retriever(self):
-        """Attempts OpenAI dense embeddings if key is present; otherwise initializes TF-IDF vectors."""
+        """Attempts OpenAI dense embeddings if key is present; otherwise initializes BM25 index."""
         if settings.OPENAI_API_KEY and not settings.MOCK_LLM:
             try:
                 from langchain_openai import OpenAIEmbeddings
@@ -102,41 +132,58 @@ class HotelKnowledgeBase:
                 self.dense_embeddings = embedder.embed_documents(texts)
                 return
             except Exception as e:
-                print(f"[RAG] OpenAI dense embeddings unavailable ({e}), defaulting to lexical TF-IDF index.")
+                print(f"[RAG] OpenAI dense embeddings unavailable ({e}), defaulting to BM25 index.")
 
-        self._init_local_tfidf()
+        self._init_bm25()
 
     def _tokenize(self, text: str) -> list[str]:
-        return [w.lower() for w in re.findall(r"\b\w{2,}\b", text)]
+        text = normalize_text(text)
+        words = [w for w in re.findall(r"\b[a-zA-Z0-9_-]{2,}\b", text)]
+        expanded = []
+        for w in words:
+            if w not in STOPWORDS:
+                expanded.append(w)
+                stemmed = re.sub(r"(?:ing|ed|es|s)$", "", w)
+                if stemmed and len(stemmed) >= 3 and stemmed != w:
+                    expanded.append(stemmed)
+                if w in SYNONYMS:
+                    expanded.extend(SYNONYMS[w])
+        return expanded
 
-    def _init_local_tfidf(self):
-        """Constructs an in-memory TF-IDF index with cosine-normalized vectors."""
-        doc_tokens = [self._tokenize(f"{c['title']} {c['content']}") for c in self.chunks]
-        self.doc_freqs = Counter()
-        for tokens in doc_tokens:
-            for term in set(tokens):
-                self.doc_freqs[term] += 1
+    def _init_bm25(self):
+        """Constructs an in-memory BM25 index with document frequency weights."""
+        self.doc_tokens = [self._tokenize(f"{c['title']} {c['content']}") for c in self.chunks]
+        self.df = Counter()
+        for dt in self.doc_tokens:
+            for t in set(dt):
+                self.df[t] += 1
 
         self.N = len(self.chunks)
-        self.doc_vectors = []
-        for tokens in doc_tokens:
-            tf = Counter(tokens)
-            vec = {}
-            for term, count in tf.items():
-                idf = math.log((self.N + 1) / (self.doc_freqs[term] + 0.5)) + 1.0
-                vec[term] = count * idf
-            # L2 vector normalization
-            norm = math.sqrt(sum(v * v for v in vec.values())) or 1.0
-            self.doc_vectors.append({k: v / norm for k, v in vec.items()})
+
+    def _bm25_score(self, query_tokens: list[str], idx: int) -> float:
+        c = self.chunks[idx]
+        title_tokens = set(self._tokenize(c["title"]))
+        content_tokens = Counter(self.doc_tokens[idx])
+        s = 0.0
+        for t in query_tokens:
+            if t in content_tokens:
+                n = self.df.get(t, 0)
+                # Standard BM25 IDF
+                idf = math.log(1.0 + (self.N - n + 0.5) / (n + 0.5))
+                # Title presence bonus
+                boost = 3.0 if t in title_tokens else 1.0
+                tf = content_tokens[t]
+                s += idf * (tf / (tf + 1.2)) * boost
+        return s
 
     def retrieve(self, query: str, k: int = 4) -> list[dict[str, Any]]:
         """
-        Retrieves top-k relevant knowledge chunks using cosine similarity.
+        Retrieves top-k relevant knowledge chunks using dense embeddings or BM25.
         """
         if not query or not query.strip():
             return self.chunks[:k]
 
-        # 1. Use dense OpenAI embeddings if available
+        # 1. Use dense OpenAI embeddings if active
         if self.dense_embeddings is not None and settings.OPENAI_API_KEY and not settings.MOCK_LLM:
             try:
                 from langchain_openai import OpenAIEmbeddings
@@ -158,30 +205,20 @@ class HotelKnowledgeBase:
             except Exception:
                 pass
 
-        # 2. Local TF-IDF Cosine Retrieval (deterministic, offline-ready)
+        # 2. Local BM25 Retrieval
         q_tokens = self._tokenize(query)
         if not q_tokens:
             return self.chunks[:k]
 
-        q_tf = Counter(q_tokens)
-        q_vec = {}
-        for term, count in q_tf.items():
-            if term in self.doc_freqs:
-                idf = math.log((self.N + 1) / (self.doc_freqs[term] + 0.5)) + 1.0
-                q_vec[term] = count * idf
+        scored_chunks = []
+        for i, c in enumerate(self.chunks):
+            s = self._bm25_score(q_tokens, i)
+            chunk_copy = dict(c)
+            chunk_copy["score"] = round(s, 4)
+            scored_chunks.append((s, chunk_copy))
 
-        q_norm = math.sqrt(sum(v * v for v in q_vec.values())) or 1.0
-        q_vec = {k: v / q_norm for k, v in q_vec.items()}
-
-        scores = []
-        for i, doc_vec in enumerate(self.doc_vectors):
-            dot = sum(q_vec.get(term, 0.0) * weight for term, weight in doc_vec.items())
-            chunk_copy = dict(self.chunks[i])
-            chunk_copy["score"] = round(dot, 4)
-            scores.append((dot, chunk_copy))
-
-        scores.sort(key=lambda x: x[0], reverse=True)
-        return [s[1] for s in scores[:k]]
+        scored_chunks.sort(key=lambda x: x[0], reverse=True)
+        return [item[1] for item in scored_chunks[:k]]
 
 # Singleton knowledge base instance
 kb = HotelKnowledgeBase()

@@ -1,0 +1,16 @@
+[tool.uv.workspace]
+members = ["backend"]
+
+[project]
+name = "hotel-guest-assistant"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "backend"
+]
+
+[tool.uv.sources]
+backend = { workspace = true }
+
+[project.scripts]
+backend = "app.main:start"

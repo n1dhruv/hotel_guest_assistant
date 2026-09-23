@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 
 from app.config import settings
+from app.core.chunker import SemanticHotelChunker, SemanticChunk
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 HOTEL_DATA_FILE = BASE_DIR / "data" / "hotel_data.json"
@@ -86,111 +87,10 @@ class HotelKnowledgeBase:
         self._init_retriever()
 
     def _load_and_chunk(self):
-        """Chunks hotel data into fine-grained, self-contained semantic units."""
-        with open(self.data_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        # Canonical topic maps
-        amenity_topics = ["pool", "spa_gym", "breakfast", "wifi", "parking", "dining"]
-        policy_topics = {
-            "cancellation": "cancellation",
-            "checkInCheckOut": "checkincheckout",
-            "idVerification": "id_verification",
-            "pets": "pets",
-            "children": "children",
-            "smoking": "smoking",
-            "payment": "payment"
-        }
-
-        # 1. Property Overview Chunk
-        prop = data.get("property", {})
-        self.chunks.append({
-            "id": "property-overview",
-            "category": "property",
-            "topic": "property",
-            "title": f"About {prop.get('name')}",
-            "content": (
-                f"{prop.get('name')} - {prop.get('tagline')}. Located at {prop.get('address')}. "
-                f"Location is Candolim Beach, North Goa. Standard checkin time is {prop.get('checkIn')} "
-                f"and checkout time is {prop.get('checkOut')}. "
-                f"Contact numbers: {prop.get('contact', {}).get('phone')}, Mobile: {prop.get('contact', {}).get('mobile')}, "
-                f"Email: {prop.get('contact', {}).get('email')}."
-            )
-        })
-
-        # 2. Amenity Chunks
-        for i, a in enumerate(data.get("amenities", [])):
-            topic = amenity_topics[i] if i < len(amenity_topics) else f"amenity_{i}"
-            self.chunks.append({
-                "id": f"amenity-{i}-{a.get('name', '').lower().replace(' ', '-')}",
-                "category": "amenity",
-                "topic": topic,
-                "title": f"Amenity: {a.get('name')}",
-                "content": f"{a.get('name')} | Timings: {a.get('hours')}. Description: {a.get('description')}"
-            })
-
-        # 3. Room Tier Chunks
-        for r in data.get("rooms", []):
-            self.chunks.append({
-                "id": f"room-{r.get('id')}",
-                "category": "room",
-                "topic": f"room_{r.get('id')}",
-                "title": f"Room: {r.get('type')}",
-                "content": (
-                    f"{r.get('type')} (ID: {r.get('id')}) | Maximum Capacity: {r.get('maxGuests')} guests. "
-                    f"Base Tariff: ₹{r.get('basePricePerNight')} per night. "
-                    f"Bedding: {r.get('bedType')}. Features: {r.get('description')}"
-                )
-            })
-
-        # 4. Policy Chunks
-        policies = data.get("policies", {})
-        policy_display_names = {
-            "cancellation": "Cancellation & Refund",
-            "checkInCheckOut": "Check-in and Check-out Timings",
-            "idVerification": "ID Verification & Documentation",
-            "pets": "Pet Policy",
-            "children": "Child Occupancy & Extra Bed",
-            "smoking": "Smoking Policy",
-            "payment": "Payment & Invoicing"
-        }
-        for pol_key, pol_val in policies.items():
-            topic = policy_topics.get(pol_key, f"policy_{pol_key}")
-            display_name = policy_display_names.get(pol_key, pol_key.capitalize())
-            self.chunks.append({
-                "id": f"policy-{pol_key}",
-                "category": "policy",
-                "topic": topic,
-                "title": f"Policy: {display_name}",
-                "content": f"The Grand Azure Resort {display_name} Policy: {pol_val}"
-            })
-
-        # 5. Curated FAQ Chunks (Stored as topics and factual answers, without questions)
-        faq_topic_keys = {
-            "faq-1": "checkincheckout",
-            "faq-2": "pool",
-            "faq-3": "breakfast",
-            "faq-4": "room_recommendation",
-            "faq-5": "cancellation",
-            "faq-6": "parking",
-            "faq-7": "pets",
-            "faq-8": "id_verification",
-            "faq-9": "dining",
-            "faq-10": "highlights",
-            "faq-11": "amenities_summary"
-        }
-        for faq in data.get("faqs", []):
-            faq_id = faq.get("id", "")
-            topic_str = faq.get("topic") or faq.get("title", "")
-            topic_key = faq_topic_keys.get(faq_id, f"faq_{faq_id}")
-            answer_text = faq.get("answer") or faq.get("a", "")
-            self.chunks.append({
-                "id": faq_id,
-                "category": "faq",
-                "topic": topic_key,
-                "title": f"FAQ: {topic_str}",
-                "content": f"{topic_str}: {answer_text}"
-            })
+        """Loads semantic chunks generated by SemanticHotelChunker."""
+        chunker = SemanticHotelChunker(self.data_path)
+        self.semantic_chunks = chunker.build_chunks()
+        self.chunks = [sc.to_dict() for sc in self.semantic_chunks]
 
     def _init_retriever(self):
         """Attempts OpenAI dense embeddings if key is present; otherwise initializes BM25 index."""

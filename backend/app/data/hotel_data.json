@@ -1,0 +1,141 @@
+{
+  "property": {
+    "name": "The Grand Azure Heritage Resort & Spa",
+    "tagline": "Luxury beachfront hospitality on Candolim Beach, Goa",
+    "checkIn": "2:00 PM",
+    "checkOut": "11:00 AM",
+    "address": "Candolim Beach Road, Fort Aguada Area, Candolim, North Goa 403515, India",
+    "contact": {
+      "phone": "+91 832 249 8000",
+      "mobile": "+91 98201 12345",
+      "email": "concierge@grandazuregoa.com"
+    }
+  },
+  "amenities": [
+    {
+      "name": "Oceanview Infinity Pool",
+      "hours": "6:00 AM - 9:00 PM daily",
+      "description": "Temperature-controlled outdoor infinity pool overlooking the Arabian Sea, with complimentary pool towels, sun loungers, and poolside coconut water & beverage service."
+    },
+    {
+      "name": "AyurVeda Spa & Fitness Center",
+      "hours": "Spa: 8:00 AM - 8:00 PM | Gym: 24/7 access with room key card",
+      "description": "Authentic Kerala Ayurvedic treatments, steam, sauna, and modern fitness center with premium cardio, strength training, and yoga mats."
+    },
+    {
+      "name": "Complimentary Royal Buffet Breakfast",
+      "hours": "7:00 AM - 10:30 AM daily (until 11:00 AM on Sundays)",
+      "description": "Extensive gourmet buffet included with all bookings. Features South Indian specialties (idli, medu vada, live dosa counter), North Indian favorites (stuffed parathas, poori bhaji), live egg counter, continental bakery, filter coffee, and masala chai. Dedicated Pure Veg and Jain sections available."
+    },
+    {
+      "name": "High-Speed Wi-Fi",
+      "hours": "24/7 throughout property",
+      "description": "Complimentary 500 Mbps high-speed fiber Wi-Fi across all guest rooms, gardens, conference halls, and poolside."
+    },
+    {
+      "name": "Valet & EV Parking",
+      "hours": "24/7",
+      "description": "Complimentary covered parking for resident guests with 24/7 security and dual Tata Power / universal EV fast-charging stations."
+    },
+    {
+      "name": "Saffron Coastal & Spice Restaurant",
+      "hours": "Lunch: 12:30 PM - 3:30 PM | Dinner: 7:00 PM - 11:00 PM",
+      "description": "Fine-dining restaurant serving authentic Goan seafood delicacies, North Indian tandoor, Mughlai curries, and regional thalis, with a separate pure vegetarian kitchen section."
+    }
+  ],
+  "rooms": [
+    {
+      "id": "standard-queen",
+      "type": "Standard Queen Room",
+      "maxGuests": 2,
+      "basePricePerNight": 4500,
+      "bedType": "1 Queen Bed",
+      "description": "Elegant 320 sq ft room with courtyard garden view, Queen plush mattress, Italian marble bathroom with rainfall shower, 55-inch 4K Smart TV, tea/coffee maker, and workstation."
+    },
+    {
+      "id": "deluxe-king",
+      "type": "Deluxe King Room",
+      "maxGuests": 3,
+      "basePricePerNight": 6500,
+      "bedType": "1 King Bed + 1 Rollaway bed available on request",
+      "description": "Spacious 460 sq ft room with private balcony overlooking the Arabian Sea, King plush mattress, deep soaking bathtub, mini-bar, and cozy lounge sofa."
+    },
+    {
+      "id": "family-suite",
+      "type": "Family Executive Suite",
+      "maxGuests": 4,
+      "basePricePerNight": 9500,
+      "bedType": "1 King Bed + 2 Twin Beds (Separate Bedroom)",
+      "description": "Expansive 750 sq ft two-bedroom suite with Arabian Sea view, separate living and dining rooms, two full en-suite bathrooms, and private sundeck balcony."
+    },
+    {
+      "id": "presidential-suite",
+      "type": "Maharaja Presidential Suite",
+      "maxGuests": 5,
+      "basePricePerNight": 18000,
+      "bedType": "2 King Bedrooms + Sofa Bed",
+      "description": "Royal 1,300 sq ft penthouse villa with panoramic 360-degree ocean views, private rooftop plunge pool, jacuzzi, personal butler service, and private cocktail bar."
+    }
+  ],
+  "policies": {
+    "cancellation": "Free cancellation up to 24 hours prior to scheduled check-in (2:00 PM IST). Cancellations made within 24 hours incur a charge equal to the first night's room rate.",
+    "checkInCheckOut": "Standard check-in begins at 2:00 PM. Check-out is by 11:00 AM. Early check-in (from 10:00 AM) and late check-out (up to 2:00 PM) are subject to room availability upon request.",
+    "idVerification": "In accordance with Government of India regulations, a valid government-issued photo ID with address (Aadhaar Card, Passport, Voter ID, or Driving License) is mandatory for every adult guest during check-in. PAN cards are not accepted as valid proof of address.",
+    "pets": "Pets are strictly not allowed on resort premises, with the sole exception of certified service animals with valid veterinary and training documentation.",
+    "children": "Children up to 5 years old stay complimentary when sharing existing bedding with parents. An extra rollaway bed for children aged 6 to 12 years is available for ₹1,200 per night.",
+    "smoking": "All guest rooms, suites, and enclosed indoor premises are strictly 100% smoke-free. A deep-cleaning sanitation fee of ₹5,000 applies for smoking inside rooms. Designated open-air smoking zones are available on property grounds.",
+    "payment": "We accept UPI (Google Pay, PhonePe, Paytm, BHIM), RuPay, Visa, MasterCard, American Express, and corporate direct billing. Valid GST details can be provided at check-in for tax invoicing."
+  },
+  "faqs": [
+    {
+      "id": "faq-1",
+      "q": "What time is check-in?",
+      "a": "Standard check-in begins at 2:00 PM IST. Early check-in starting from 10:00 AM can be arranged subject to room availability."
+    },
+    {
+      "id": "faq-2",
+      "q": "What time is check-out?",
+      "a": "Check-out time is by 11:00 AM IST. Late check-out until 2:00 PM may be requested at the front desk, subject to availability."
+    },
+    {
+      "id": "faq-3",
+      "q": "Does the hotel have a swimming pool?",
+      "a": "Yes! The resort features a temperature-controlled outdoor oceanview infinity pool overlooking Candolim Beach, open daily from 6:00 AM to 9:00 PM with complimentary towels and poolside beverage service."
+    },
+    {
+      "id": "faq-4",
+      "q": "Is breakfast included?",
+      "a": "Yes, complimentary Royal Buffet Breakfast is included for all registered hotel guests daily from 7:00 AM to 10:30 AM (until 11:00 AM on Sundays), featuring South Indian, North Indian, continental, and dedicated pure vegetarian & Jain options."
+    },
+    {
+      "id": "faq-5",
+      "q": "Which room is suitable for three guests?",
+      "a": "Our Deluxe King Room (max 3 guests with a rollaway extra bed on request) or our Family Executive Suite (max 4 guests with 1 King and 2 Twin beds in separate rooms) are ideal choices."
+    },
+    {
+      "id": "faq-6",
+      "q": "What is the cancellation policy?",
+      "a": "We offer free cancellation up to 24 hours prior to check-in (2:00 PM IST). Cancellations made within 24 hours incur a charge for the first night."
+    },
+    {
+      "id": "faq-7",
+      "q": "Do you have parking facilities?",
+      "a": "Yes, we provide complimentary on-site covered parking with 24/7 security and Tata Power / universal EV charging stations for resident guests. Complimentary valet service is also provided."
+    },
+    {
+      "id": "faq-8",
+      "q": "Are pets allowed?",
+      "a": "Pets are strictly not allowed on resort grounds, except for certified service animals with valid documentation."
+    },
+    {
+      "id": "faq-9",
+      "q": "What government ID is required at check-in?",
+      "a": "As per Government of India guidelines, all adult guests must present an original government-issued photo ID with address proof (Aadhaar Card, Passport, Voter ID, or Driving License). PAN cards are not accepted as proof of address."
+    },
+    {
+      "id": "faq-10",
+      "q": "Is pure vegetarian and Jain food available?",
+      "a": "Yes, our Saffron Coastal & Spice restaurant maintains a separate dedicated pure vegetarian kitchen area and serves authentic Jain dishes (prepared without onion or garlic) upon request."
+    }
+  ]
+}

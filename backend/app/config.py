@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 class Settings(BaseSettings):
-    APP_NAME: str = "Grand Azure Hotel AI Guest Assistant"
+    APP_NAME: str = "The Grand Azure Heritage Resort & Spa (Goa, India)"
     DEBUG: bool = True
     OPENAI_API_KEY: str = ""
     MOCK_LLM: bool = False

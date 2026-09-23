@@ -1,72 +1,154 @@
-# The Grand Azure Heritage Resort & Spa — AI Guest Assistant
+# Hotel Guest Assistant
 
-An enterprise-grade, full-stack AI Concierge & Booking Assistant developed for **The Grand Azure Heritage Resort & Spa** (Candolim Beach, North Goa, India) fulfilling the Simplotel technical assignment.
-
----
-
-## 🌟 Key Highlights
-
-- **Authentic Indian Hospitality**: Rooted in Candolim Goa context, Indian Rupee (₹) pricing, Aadhaar/Govt ID verification regulations, pure vegetarian & Jain culinary offerings, and Kerala Ayurveda wellness.
-- **Universal Multi-Model Support via LiteLLM**: Plug in any provider seamlessly (`gemini/gemini-3.1-flash-lite`, `gpt-4o-mini`, `claude-3-5-sonnet`, `groq/llama-3.3-70b`, or local `ollama/llama3`) by editing a single environment variable.
-- **High-Precision RAG Grounding**: Fine-grained semantic chunking with custom BM25 retriever featuring stopword elimination, morphological suffix stemming (`-ation` / `-ations`), and title boost.
-- **Deterministic Tool Calling**: Live room inventory & stay tariff calculation (`nights * tariff`) executed with zero hallucination.
-- **Security & Prompt Injection Firewall**: Proactively blocks jailbreaks, developer prompt extraction, and role overrides.
-- **Zero-Dependency Dynamic Fallback**: Works 100% offline with instant fallback if third-party LLM providers encounter rate limits or network issues.
-- **Observability & Telemetry**: Built-in `StatsTracker` exposing live metrics via `GET /api/stats`.
-- **Modern Responsive Frontend**: Built with Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4, and Lucide icons.
+A full-stack guest assistant web application built for The Grand Azure Heritage Resort & Spa in Candolim, Goa. The system handles guest inquiries about amenities, policies, dining, and room bookings using Retrieval-Augmented Generation (RAG) alongside a deterministic room availability engine.
 
 ---
 
-## 🏗️ Architecture
+## What the Project Does
 
-```mermaid
-flowchart TD
-    Guest["Guest Web Browser (Next.js 16)"]
-    API["FastAPI Orchestrator (:8000)"]
-    Guard["Security Guard (Prompt Injection Gate)"]
-    RAG["RAG In-Memory Retriever (BM25 + Semantic Chunks)"]
-    Orchestrator["LiteLLM Orchestrator"]
-    Tool["Deterministic Tool (check_room_availability)"]
-    DB[("Hotel Ground Truth (hotel_data.json)")]
-    Stats["Telemetry & Stats Tracker"]
+When guests interact with the hotel assistant, the system performs several tasks:
 
-    Guest -->|POST /api/chat| API
-    API --> Guard
-    Guard -->|Clean Request| RAG
-    RAG -->|Ground Truth Chunks| Orchestrator
-    DB --> RAG
-    Orchestrator -->|Tool Calling| Tool
-    Orchestrator -->|Grounded Reply| API
-    API --> Stats
-    API -->|JSON + Availability Cards| Guest
+1. **Answers property questions**: Explains amenities, check-in and check-out timings, dining options, ID verification requirements, cancellation terms, and general house rules using the verified resort knowledge base.
+2. **Checks live room availability**: When given check-in dates, check-out dates, and guest counts, it calculates stay length, verifies guest capacity per room type, calculates tariffs, and returns structured room cards.
+3. **Clarifies missing booking details**: If a guest asks about room availability without providing dates, the assistant prompts them for the missing information and presents an interactive date picker.
+4. **Handles out-of-scope inquiries**: If a guest asks about external sightseeing, water sports not offered on site, or unrelated topics, the system avoids inventing details and directs them to the concierge desk with verified contact details.
+5. **Defends against prompt injections**: Scans incoming messages for jailbreak attempts, developer prompt extraction, and instructions to override safety guidelines.
+
+---
+
+## How the System Works
+
+```
+Guest Input (Browser)
+       |
+       v
+[FastAPI Backend: /api/chat]
+       |
+       +---> [1. Prompt Injection Gate] ---> Block if malicious
+       |
+       +---> [2. RAG Knowledge Retrieval] ---> Top matching chunks from hotel_data.json
+       |
+       +---> [3. Orchestrator]
+                 |
+                 |--> If live LLM enabled: Calls model via LiteLLM with tool-calling
+                 |
+                 |--> If mock/offline mode: Deterministic RAG engine
+                          |
+                          |--> Availability check (if dates provided)
+                          |--> Topic-deduplicated answer synthesis
+       |
+       +---> [4. Response Delivery]
+                 |--> Structured JSON with text reply, sources, and room cards
+                 |--> Real-time typewriter streaming on the frontend
+```
+
+### 1. Security Guard
+Every message passes through `app/core/guard.py` before hitting any language model or retrieval index. It uses regex patterns covering common prompt injections, system prompt exfiltration attempts, developer mode triggers, and chat template token manipulations. If flagged, the request is immediately neutralized with a polite boundary message.
+
+### 2. Knowledge Retrieval (RAG)
+Hotel ground truth is stored in `backend/app/data/hotel_data.json` covering:
+- Property overview and contact details
+- Resort amenities (pool, spa, gym, breakfast, parking, dining)
+- Room tiers, capacities, and base rates
+- Policies (cancellation, check-in/out, ID verification, pets, children, smoking, payments)
+- Curated guest FAQs
+
+At startup, `app/core/rag.py` splits this data into semantic chunks and indexes them with an in-memory BM25 lexical retriever. The retriever applies custom text normalization (such as unifying "check-in" to "checkin"), stopword filtering, morphological suffix stemming, title weighting, and synonym expansion. If an OpenAI API key is supplied, dense vector embeddings (`text-embedding-3-small`) can optionally be used instead.
+
+### 3. Answer Synthesis and Deduplication
+In the hotel dataset, information often appears in multiple formats. For example, the swimming pool is documented both as an amenity catalog item and as a conversational FAQ.
+
+To prevent redundant duplicate answers:
+- Each chunk has an assigned canonical topic (`pool`, `breakfast`, `checkin`, `checkout`, `cancellation`, etc.).
+- When resolving specific questions, candidate chunks are grouped by topic, and the system selects the single most conversational chunk (preferring FAQ answers over raw catalog entries).
+- For compound questions (such as asking for both check-in and check-out times in a single sentence), both topics are recognized and answered together.
+- For broad questions (such as asking for all amenities or an overview of the resort), dedicated synthesis functions format comprehensive, categorized listings from the entire knowledge base.
+
+### 4. Room Availability Engine
+Availability checks run through `app/core/tools.py`. The tool:
+- Validates that check-in occurs today or in the future, and check-out is after check-in.
+- Calculates the total nights of stay.
+- Filters room tiers by maximum guest capacity.
+- Applies seasonal pricing multipliers (peak holiday seasons vs standard dates).
+- Calculates the total stay cost for each eligible room type.
+- Returns structured JSON used by the frontend to render interactive room cards.
+
+### 5. Frontend Experience
+The interface is built with Next.js and Tailwind CSS:
+- **Typewriter streaming**: Rather than waiting for a full payload, the response reveals progressively with a blinking cursor at human reading speed.
+- **Structured cards**: When room availability is checked, interactive room tier cards display prices, bedding details, and capacity badges.
+- **Date picker**: Appears automatically whenever the assistant detects that booking dates were omitted.
+- **Quick prompts**: Pre-set buttons for common queries like check-in times, pool hours, cancellation policies, and breakfast.
+
+---
+
+## Tech Stack
+
+- **Backend**: Python 3.12+, FastAPI, Uvicorn, LiteLLM, NumPy
+- **Frontend**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS, Lucide Icons
+- **Package Managers**: `uv` for Python virtual environment and dependencies, `npm` for Node.js
+- **Testing**: Pytest with pytest-asyncio
+
+---
+
+## Project Structure
+
+```
+.
+|-- backend/
+|   |-- app/
+|   |   |-- api/
+|   |   |   |-- chat.py            # Chat and streaming endpoints
+|   |   |   |-- availability.py    # Direct room availability endpoint
+|   |   |   |-- stats.py           # Operational telemetry endpoint
+|   |   |-- core/
+|   |   |   |-- chain.py           # Universal orchestrator & synthesis logic
+|   |   |   |-- guard.py           # Prompt injection security firewall
+|   |   |   |-- rag.py             # In-memory BM25 & dense vector store
+|   |   |   |-- tools.py           # Room availability & pricing calculator
+|   |   |   |-- stats.py           # Telemetry metrics tracker
+|   |   |-- data/
+|   |   |   |-- hotel_data.json    # Verified hotel knowledge base
+|   |   |-- config.py              # Environment configuration via Pydantic
+|   |   |-- main.py                # FastAPI application entrypoint
+|   |-- tests/                     # 27 automated unit and integration tests
+|   |-- pyproject.toml             # Python package configuration
+|   |-- .env                       # Backend environment settings
+|-- frontend/
+|   |-- src/
+|   |   |-- app/                   # Next.js App Router pages and layout
+|   |   |-- components/
+|   |   |   |-- ChatInterface.tsx  # Main interactive chat console
+|   |   |   |-- AvailabilityCard.tsx # Room inventory & pricing display
+|   |   |   |-- DateGuestPicker.tsx  # Inline booking dates selector
+|   |   |   |-- FormattedMessage.tsx # Markdown renderer for assistant messages
+|   |-- package.json
+|-- docs/                          # Architecture decisions and evaluation reports
+|-- README.md
 ```
 
 ---
 
-## 🚀 Quick Start Guide
+## Getting Started
 
 ### Prerequisites
-- Python 3.12+ (or 3.13) with [`uv`](https://github.com/astral-sh/uv) installed
-- Node.js 18+ and `npm`
+- Python 3.12 or newer with `uv` installed (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
+- Node.js 18 or newer with `npm`
 
-### 1. Start the Backend
+### 1. Run the Backend
 
-You can run the backend directly with a single command from anywhere in the repository:
+From the repository root:
 
 ```bash
-# Launch FastAPI backend on http://0.0.0.0:8000
+cd backend
 uv run backend
 ```
 
-> **Note**: You can also run inside the backend folder:
-> ```bash
-> cd backend
-> uv run backend
-> ```
+The API server starts at `http://localhost:8000`. You can test health by visiting `http://localhost:8000/health` or view the interactive OpenAPI documentation at `http://localhost:8000/docs`.
 
-### 2. Start the Frontend
+### 2. Run the Frontend
 
-In a second terminal window:
+In a separate terminal:
 
 ```bash
 cd frontend
@@ -74,154 +156,96 @@ npm install
 npm run dev
 ```
 
-Open **[http://localhost:3000](http://localhost:3000)** in your browser.
+Open `http://localhost:3000` in your web browser.
 
 ---
 
-## ⚙️ Configuration & Model Selection
+## Configuration
 
-Configure the backend via `backend/.env` (or copy from `backend/.env.example`):
+Settings are controlled via `backend/.env`. A template is provided in `backend/.env.example`.
 
-```bash
-# Universal LiteLLM Model Selection:
-LLM_MODEL=gemini/gemini-3.1-flash-lite
+```env
+# LiteLLM Model Selection (e.g. gpt-4o-mini, gemini/gemini-2.5-flash, groq/llama-3.3-70b-versatile, ollama/llama3)
+LLM_MODEL=gpt-4o-mini
 
-# Provider API Keys (leave blank to run in offline Dynamic RAG mode)
-GEMINI_API_KEY=your_gemini_api_key_here
+# Provider API Keys (leave blank to run in offline dynamic RAG mode)
 OPENAI_API_KEY=
+GEMINI_API_KEY=
 ANTHROPIC_API_KEY=
 GROQ_API_KEY=
 
-# Server settings
+# Force deterministic RAG mode even if keys are present
+MOCK_LLM=true
+
+# Server configuration
+DEBUG=true
 PORT=8000
 HOST=0.0.0.0
 ```
 
-### Switching LLM Providers with LiteLLM:
-- **Google Gemini**: `LLM_MODEL=gemini/gemini-3.1-flash-lite` (or `gemini-flash-latest`) + set `GEMINI_API_KEY`
-- **OpenAI**: `LLM_MODEL=gpt-4o-mini` + set `OPENAI_API_KEY`
-- **Anthropic**: `LLM_MODEL=claude-3-5-sonnet-20241022` + set `ANTHROPIC_API_KEY`
-- **Groq**: `LLM_MODEL=groq/llama-3.3-70b-versatile` + set `GROQ_API_KEY`
-- **Local Ollama**: `LLM_MODEL=ollama/llama3` (no API key required)
+### Running with a Live LLM vs Mock Mode
+- **Offline / Mock Mode (`MOCK_LLM=true`)**: Runs entirely on the local machine with no external network calls. Retrieval, answer synthesis, topic deduplication, and tool calls are handled deterministically in sub-millisecond response times.
+- **Live LLM Mode (`MOCK_LLM=false`)**: Passes retrieved context and tool definitions to your chosen model via LiteLLM. If the external provider experiences network latency or fails, the orchestrator automatically falls back to the local RAG engine.
 
 ---
 
-## 🏨 Hotel Knowledge Base & Pricing Rules
+## API Endpoints
 
-All hotel facts are grounded in `backend/app/data/hotel_data.json`:
+### `POST /api/chat`
+Main conversational endpoint. Accepts conversation history and returns the assistant's reply along with verified source references and availability data if tool calling was triggered.
 
-- **Property**: The Grand Azure Heritage Resort & Spa, Candolim Beach Road, Candolim, North Goa 403515.
-- **Check-In**: 2:00 PM IST | **Check-Out**: 11:00 AM IST.
-- **Government ID Rule**: Mandatory Aadhaar Card, Passport, or Voter ID for every adult guest at check-in (PAN card is not accepted as per Goan hotel regulations).
-- **Cancellation Policy**: Free cancellation up to 24 hours prior to 2:00 PM check-in; cancellations within 24 hours incur the first night's tariff.
+**Request:**
+```json
+{
+  "messages": [
+    {"role": "user", "content": "What time is check-in and check-out?"}
+  ]
+}
+```
 
-### Room Tiers & Tariffs
-| Room Type | Max Guests | Bed Type | Base Tariff |
-| :--- | :---: | :--- | :---: |
-| **Standard Queen Room** | 2 | 1 Queen Bed | ₹4,500 / night |
-| **Deluxe King Room** | 3 | 1 King Bed (Rollaway on request) | ₹6,500 / night |
-| **Family Executive Suite** | 4 | 1 King + 2 Twin Beds (2 Rooms) | ₹10,500 / night |
-| **Maharaja Presidential Suite** | 4 | 1 King Bed + Private Plunge Pool | ₹22,000 / night |
+**Response:**
+```json
+{
+  "reply": "Standard check-in begins at 2:00 PM IST. Early check-in starting from 10:00 AM can be arranged subject to room availability.\n\nCheck-out time is by 11:00 AM IST. Late check-out until 2:00 PM may be requested at the front desk, subject to availability.",
+  "tool_called": false,
+  "availability": null,
+  "used_fallback": false,
+  "injection_blocked": false,
+  "needs_dates": false,
+  "retrieved_sources": ["FAQ: What time is check-in?", "FAQ: What time is check-out?"],
+  "latency_ms": 0.8
+}
+```
+
+### `POST /api/chat/stream`
+Server-Sent Events (SSE) streaming endpoint that emits tokens in real-time as they are produced, followed by a metadata event containing retrieved sources and availability results.
+
+### `POST /api/availability`
+Direct endpoint for querying room rates and capacity without going through the chat assistant.
+
+**Request:**
+```json
+{
+  "checkIn": "2026-10-15",
+  "checkOut": "2026-10-18",
+  "adults": 2
+}
+```
+
+### `GET /api/stats`
+Telemetry endpoint that reports real-time metrics including total requests, tool call rates, injection blocks, and average latency.
 
 ---
 
-## 🧪 Testing & Verification
+## Testing
 
-### 1. Automated Test Suite (pytest)
-Runs 27 comprehensive unit and integration tests across security, tools, RAG, API endpoints, and telemetry:
+The project includes an automated test suite covering security checks, RAG retrieval accuracy, availability calculations, and API routes.
+
+Run the tests from the `backend` directory:
 
 ```bash
 cd backend
 uv run pytest
 ```
 
-### 2. Golden Evaluation Harness (10 Scenarios)
-Executes the 10 real-world evaluation scenarios and updates `docs/EVALUATION.md`:
-
-```bash
-uv run python backend/scripts/eval.py
-```
-
-**Results (100% Pass Rate)**:
-- Scenario 1: Normal FAQ Inquiry (Pool amenities) ✅
-- Scenario 2: Normal Policy Inquiry (Cancellation rules) ✅
-- Scenario 3: Room Recommendation (3 guests fit) ✅
-- Scenario 4: Availability Check with Complete Dates ✅
-- Scenario 5: Availability Check with Missing Dates (asks clarification) ✅
-- Scenario 6: Ambiguous / Short Query Handling ✅
-- Scenario 7: Out-of-Scope / Unsupported Fallback ✅
-- Scenario 8: Multi-Turn Conversational Memory ✅
-- Scenario 9: Prompt Injection & Jailbreak Defense ✅
-- Scenario 10: End-to-End Availability & Stay Calculation ✅
-
----
-
-## 📊 Observability & Telemetry API
-
-Query real-time metrics tracking operational usefulness:
-
-```bash
-curl http://localhost:8000/api/stats
-```
-
-Example Response:
-```json
-{
-  "total_requests": 38,
-  "tool_calls_total": 9,
-  "fallback_total": 3,
-  "injections_blocked": 2,
-  "tool_call_rate": 0.237,
-  "fallback_rate": 0.079,
-  "avg_latency_ms": 142.5,
-  "status": "healthy"
-}
-```
-
----
-
-## 🛠️ REST API Reference
-
-### `POST /api/chat`
-Main conversational endpoint for guest interactions.
-
-**Request**:
-```json
-{
-  "messages": [
-    {"role": "user", "content": "Are there rooms available from 2026-10-15 to 2026-10-18 for 2 adults?"}
-  ]
-}
-```
-
-**Response**:
-```json
-{
-  "reply": "Namaste! I have checked our live inventory for 2026-10-15 to 2026-10-18 (3 nights) for 2 guest(s)...",
-  "tool_called": true,
-  "availability": {
-    "available": true,
-    "checkIn": "2026-10-15",
-    "checkOut": "2026-10-18",
-    "adults": 2,
-    "nights": 3,
-    "rooms": [...]
-  },
-  "used_fallback": false,
-  "injection_blocked": false,
-  "retrieved_sources": ["Room: Standard Queen Room", "Room: Deluxe King Room"],
-  "latency_ms": 12.4
-}
-```
-
-### `POST /api/availability`
-Direct endpoint for date/guest picker widget.
-
----
-
-## 📜 Documentation Index
-
-- **[docs/MASTER_PLAN.md](file:///home/dhruv/simplotel_assignment/docs/MASTER_PLAN.md)**: Architectural specifications and requirements mapping.
-- **[docs/PHASES.md](file:///home/dhruv/simplotel_assignment/docs/PHASES.md)**: Detailed phase-by-phase execution breakdown.
-- **[docs/AI_DECISIONS.md](file:///home/dhruv/simplotel_assignment/docs/AI_DECISIONS.md)**: Defense of architectural choices, AI vs deterministic boundaries, and hallucination containment.
-- **[docs/EVALUATION.md](file:///home/dhruv/simplotel_assignment/docs/EVALUATION.md)**: Empirical test logs with exact input/output verification and latency.
+All 27 test cases run against the local test suite without requiring third-party API credentials.

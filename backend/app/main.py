@@ -13,10 +13,14 @@ app = FastAPI(
 )
 
 # CORS Middleware for Next.js frontend communication
+cors_origins = list(settings.CORS_ORIGINS) if isinstance(settings.CORS_ORIGINS, list) else [settings.CORS_ORIGINS]
+is_wildcard = "*" in cors_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
+    allow_origins=["*"] if is_wildcard else cors_origins,
+    allow_origin_regex=None if is_wildcard else r"https://.*\.vercel\.app",
+    allow_credentials=not is_wildcard,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -40,9 +44,11 @@ def health():
     return {"status": "healthy"}
 
 def start():
-    """Entrypoint to launch uvicorn directly via 'uv run backend'."""
+    """Entrypoint to launch uvicorn directly via 'uv run backend' or Render."""
+    import os
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=settings.DEBUG)
 
 if __name__ == "__main__":
     start()

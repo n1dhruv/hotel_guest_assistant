@@ -104,4 +104,4 @@ uv run pytest tests/ -q
 
 ## Built with
 
-OpenCode with Muse Spark. README wording cleaned with the humanizer skill (blader/humanizer).
+Antigravity, Claude, Opencode.
